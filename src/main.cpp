@@ -1115,6 +1115,33 @@ static std::string morfo_latest_metrics(const App& app,const std::string& image_
  if(sqlite3_step(st.p)!=SQLITE_ROW)return "{\"data\":null}";return col(st.p,0);
 }
 
+static std::string morfo_metrics_csv(const App& app,const std::string& image_id,const std::string& profile_run_id,const std::string& user_id){
+ Db db(app.root/"morfo.sqlite3");
+ Stmt run(db.p,R"SQL(SELECT id,metrics_version,mask_sha256,created_at,
+  json_extract(result_json,'$.data.scientific_status'),json_extract(result_json,'$.data.nature'),
+  json_extract(result_json,'$.data.candidate_pixels'),json_extract(result_json,'$.data.valid_pixels'),
+  json_extract(result_json,'$.data.matrix_pixels'),json_extract(result_json,'$.data.excluded_or_abstained_pixels'),
+  json_extract(result_json,'$.data.occupancy_percent'),json_extract(result_json,'$.data.projected_area_mm2'),
+  json_extract(result_json,'$.data.projected_area_cm2'),json_extract(result_json,'$.data.scale_x_mm_per_pixel'),
+  json_extract(result_json,'$.data.scale_y_mm_per_pixel')
+ FROM morfo_root_metric_runs WHERE profile_run_id=? AND image_id=? AND user_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1)SQL");
+ run.bind(1,profile_run_id);run.bind(2,image_id);run.bind(3,user_id);if(sqlite3_step(run.p)!=SQLITE_ROW)throw Failure("Root metric run not found");
+ auto value=[&](int column){return sqlite3_column_type(run.p,column)==SQLITE_NULL?std::string(""):col(run.p,column);};
+ std::ostringstream out;out<<"# MORFO-ROOT-METRICS-001A\r\n"
+  <<"# metric_run_id,"<<csv_cell(col(run.p,0))<<"\r\n# profile_run_id,"<<csv_cell(profile_run_id)
+  <<"\r\n# image_id,"<<csv_cell(image_id)<<"\r\n# metrics_version,"<<csv_cell(col(run.p,1))
+  <<"\r\n# mask_sha256,"<<csv_cell(col(run.p,2))<<"\r\n# created_at,"<<csv_cell(col(run.p,3))
+  <<"\r\n# scientific_status,"<<csv_cell(value(4))<<"\r\n# nature,"<<csv_cell(value(5))
+  <<"\r\n# candidate_pixels,"<<value(6)<<"\r\n# valid_pixels,"<<value(7)<<"\r\n# matrix_pixels,"<<value(8)
+  <<"\r\n# excluded_or_abstained_pixels,"<<value(9)<<"\r\n# occupancy_percent,"<<value(10)
+  <<"\r\n# projected_area_mm2,"<<value(11)<<"\r\n# projected_area_cm2,"<<value(12)
+  <<"\r\n# scale_x_mm_per_pixel,"<<value(13)<<"\r\n# scale_y_mm_per_pixel,"<<value(14)<<"\r\n"
+  <<"component_id,area_px,area_mm2,centroid_x_px,centroid_y_px,min_x,min_y,max_x,max_y,touches_image_boundary,touches_roi_boundary,touches_abstained_area\r\n";
+ Stmt components(db.p,"SELECT component_id,area_px,area_mm2,centroid_x,centroid_y,min_x,min_y,max_x,max_y,touches_image_boundary,touches_roi_boundary,touches_abstained_area FROM morfo_root_metric_components WHERE metric_run_id=? ORDER BY component_id");components.bind(1,col(run.p,0));
+ while(sqlite3_step(components.p)==SQLITE_ROW){for(int column=0;column<12;++column){if(column)out<<',';if(sqlite3_column_type(components.p,column)!=SQLITE_NULL)out<<col(components.p,column);}out<<"\r\n";}
+ return out.str();
+}
+
 static Response handle(const App& app,const http::request<http::string_body>& req){
  unsigned v=req.version();std::string target(req.target());auto p=target.substr(0,target.find('?'));auto args=params(target);
  if(req.method()==http::verb::get&&p=="/api/v1/health")return respond(http::status::ok,v,"{\"status\":\"ok\",\"name\":\"RIZOMA\",\"version\":\"0.2.0\",\"scope\":\"local-image-intake\"}");
@@ -1295,6 +1322,13 @@ static Response handle(const App& app,const http::request<http::string_body>& re
       if(req.method()==http::verb::post)return respond(http::status::created,v,morfo_start_profile(app,id,user->id));
       if(req.method()==http::verb::get)return respond(http::status::ok,v,morfo_profile_list(app,id,user->id));
      }catch(const std::exception& e){return problem(v,std::string(e.what())=="Image not found"?http::status::not_found:http::status::unprocessable_entity,e.what());}
+    }
+    if(kind.starts_with("profiles/roots-exp003/")&&(kind.ends_with("/metrics/export.csv")||kind.ends_with("/metrics/export.json"))){
+     const bool csv=kind.ends_with("/export.csv");const std::string ending=csv?"/metrics/export.csv":"/metrics/export.json";
+     const auto inner=kind.substr(std::string("profiles/roots-exp003/").size());const auto profile_run_id=inner.substr(0,inner.size()-ending.size());
+     if(!valid_id(profile_run_id))return problem(v,http::status::bad_request,"Invalid profile run identifier");
+     try{if(req.method()==http::verb::get){auto r=respond(http::status::ok,v,csv?morfo_metrics_csv(app,id,profile_run_id,user->id):morfo_latest_metrics(app,id,profile_run_id,user->id),csv?"text/csv; charset=utf-8":"application/json; charset=utf-8");r.set(http::field::content_disposition,"attachment; filename=\"morfo-morfometria-"+profile_run_id+(csv?".csv\"":".json\""));return r;}}
+     catch(const std::exception& e){return problem(v,http::status::not_found,e.what());}
     }
     if(kind.starts_with("profiles/roots-exp003/")&&kind.ends_with("/metrics")){
      const auto inner=kind.substr(std::string("profiles/roots-exp003/").size());

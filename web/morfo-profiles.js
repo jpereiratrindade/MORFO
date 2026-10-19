@@ -12,6 +12,7 @@
   const rootPath = id => `/api/v1/images/${encodeURIComponent(id)}/profiles/${profile}`;
   const artifactPath = (id,run,kind) => `${rootPath(id)}/${encodeURIComponent(run)}/${kind}`;
   const metricsPath = (id,run) => `${rootPath(id)}/${encodeURIComponent(run)}/metrics`;
+  const metricsExportPath = (id,run,format) => `${metricsPath(id,run)}/export.${format}`;
   let workspace, layer, panel;
 
   function node(tag, props={}, children=[]) {
@@ -112,6 +113,9 @@
     const tbody=table.querySelector('tbody');for(const c of (m.components||[]).slice(0,100)){
       const tr=node('tr');for(const value of [c.id,`${number.format(c.area_px)} px²`,`${fmt(c.centroid_x_px,1)}, ${fmt(c.centroid_y_px,1)}`,`${c.bounding_box.min_x},${c.bounding_box.min_y}–${c.bounding_box.max_x},${c.bounding_box.max_y}`])tr.append(node('td',{text:String(value)}));tbody.append(tr);
     }section.append(table);
+    const exports=node('nav',{className:'root-metrics-exports','aria-label':'Exportar dados morfométricos'});
+    for(const [format,label] of [['csv','Exportar CSV'],['json','Exportar JSON']])exports.append(node('a',{href:metricsExportPath(state.imageId,state.run.id,format),download:`morfo-morfometria-${state.run.id}.${format}`,text:label}));
+    section.append(exports);
     section.append(node('p',{className:'root-metrics-provenance',text:`${m.scientific_status} · ${m.metrics_version} · ${m.id}`}));return section;
   }
 

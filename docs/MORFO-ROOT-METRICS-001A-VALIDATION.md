@@ -44,3 +44,7 @@ O Gate 001A não calcula comprimento, esqueleto, diâmetro, topologia ou distrib
 espacial; esses itens pertencem aos gates seguintes. A integração antecipada oferece
 execução HTTP autenticada, persistência SQLite e consulta no painel para tornar os
 resultados de área, ocupação e componentes verificáveis pelo pesquisador.
+
+Cada execução pode ser exportada pelo painel em JSON, preservando o contrato
+completo, ou CSV RFC 4180. O CSV registra proveniência e métricas agregadas em
+linhas iniciadas por `#`, seguidas de tabela com um registro por componente.
