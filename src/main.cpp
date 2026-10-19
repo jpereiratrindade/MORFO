@@ -149,7 +149,8 @@ static std::optional<double> json_extract_optional_double(const std::string& bod
  while(p<body.size()&&std::isspace(static_cast<unsigned char>(body[p])))++p;
  if(body.compare(p,4,"null")==0)return std::nullopt;
  std::size_t used=0;double value=0;try{value=std::stod(body.substr(p),&used);}catch(...){throw Failure("Invalid JSON number: "+key);}
- if(used==0||!std::isfinite(value))throw Failure("Invalid JSON number: "+key);return value;
+ if(used==0||!std::isfinite(value))throw Failure("Invalid JSON number: "+key);
+ return value;
 }
 static bool send_email_code(const std::string& to_email,const std::string& code,std::string& err_out){
  const char* smtp_host_env=std::getenv("MORFO_SMTP_HOST");
@@ -1112,7 +1113,8 @@ static std::string morfo_start_metrics(const App& app,const std::string& image_i
 static std::string morfo_latest_metrics(const App& app,const std::string& image_id,const std::string& profile_run_id,const std::string& user_id){
  Db db(app.root/"morfo.sqlite3");Stmt st(db.p,"SELECT result_json FROM morfo_root_metric_runs WHERE profile_run_id=? AND image_id=? AND user_id=? AND deleted_at IS NULL ORDER BY created_at DESC,rowid DESC LIMIT 1");
  st.bind(1,profile_run_id);st.bind(2,image_id);st.bind(3,user_id);
- if(sqlite3_step(st.p)!=SQLITE_ROW)return "{\"data\":null}";return col(st.p,0);
+ if(sqlite3_step(st.p)!=SQLITE_ROW)return "{\"data\":null}";
+ return col(st.p,0);
 }
 
 static std::string morfo_metrics_csv(const App& app,const std::string& image_id,const std::string& profile_run_id,const std::string& user_id){
@@ -1154,12 +1156,17 @@ static std::string morfo_metric_runs_json(const App& app,const std::string& imag
 
 static std::string morfo_metric_run_json(const App& app,const std::string& metric_id,const std::string& user_id){
  Db db(app.root/"morfo.sqlite3");Stmt st(db.p,"SELECT result_json,status,notes FROM morfo_root_metric_runs WHERE id=? AND user_id=? AND deleted_at IS NULL");st.bind(1,metric_id);st.bind(2,user_id);
- if(sqlite3_step(st.p)!=SQLITE_ROW)throw Failure("Root metric run not found");std::string result=col(st.p,0);const auto end=result.rfind("}}");if(end==std::string::npos)throw Failure("Invalid persisted metric result");result.insert(end,",\"record_status\":"+q(col(st.p,1))+",\"notes\":"+q(col(st.p,2)));return result;
+ if(sqlite3_step(st.p)!=SQLITE_ROW)throw Failure("Root metric run not found");
+ std::string result=col(st.p,0);const auto end=result.rfind("}}");
+ if(end==std::string::npos)throw Failure("Invalid persisted metric result");
+ result.insert(end,",\"record_status\":"+q(col(st.p,1))+",\"notes\":"+q(col(st.p,2)));
+ return result;
 }
 
 static std::string update_morfo_metric_run(const App& app,const std::string& metric_id,const std::string& user_id,const std::string& body){
  const std::string status=json_extract_string(body,"status"),notes=json_extract_string(body,"notes");
- if(status!="NOT_VALIDATED"&&status!="REVIEWED"&&status!="ARCHIVED")throw Failure("Invalid metric status");if(notes.size()>2000)throw Failure("Metric notes exceed 2000 characters");
+ if(status!="NOT_VALIDATED"&&status!="REVIEWED"&&status!="ARCHIVED")throw Failure("Invalid metric status");
+ if(notes.size()>2000)throw Failure("Metric notes exceed 2000 characters");
  Db db(app.root/"morfo.sqlite3");Stmt st(db.p,"UPDATE morfo_root_metric_runs SET status=?,notes=? WHERE id=? AND user_id=? AND deleted_at IS NULL");st.bind(1,status);st.bind(2,notes);st.bind(3,metric_id);st.bind(4,user_id);if(sqlite3_step(st.p)!=SQLITE_DONE||sqlite3_changes(db.p)!=1)throw Failure("Root metric run not found");return morfo_metric_run_json(app,metric_id,user_id);
 }
 
