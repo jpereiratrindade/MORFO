@@ -69,7 +69,7 @@ if(BUILD_TESTING)
  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(morfo-root-metrics-001c-tests PRIVATE -UNDEBUG -Wall -Wextra -Wpedantic)
  endif()
- add_test(NAME morfo.root-metrics.001c.topology COMMAND morfo-root-metrics-001c-tests)
+ add_test(NAME morfo.root-metrics.001c COMMAND morfo-root-metrics-001c-tests)
 
  # Teste inteiramente sintetico, disponivel em qualquer clone do MORFO.
  add_executable(morfo-roots-core-tests profiles/roots/exp003/tests/core_tests.cpp)

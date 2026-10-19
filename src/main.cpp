@@ -152,6 +152,9 @@ static std::optional<double> json_extract_optional_double(const std::string& bod
  if(used==0||!std::isfinite(value))throw Failure("Invalid JSON number: "+key);
  return value;
 }
+static std::vector<double> json_extract_number_array(const std::string& body,const std::string& key){
+ const std::string needle="\""+key+"\"";auto p=body.find(needle);if(p==std::string::npos)return {};p=body.find('[',p+needle.size());if(p==std::string::npos)return {};const auto end=body.find(']',p+1);if(end==std::string::npos)throw Failure("Invalid JSON number array: "+key);std::vector<double> values;while(++p<end){while(p<end&&(std::isspace(static_cast<unsigned char>(body[p]))||body[p]==','))++p;if(p>=end)break;std::size_t used=0;double value=0;try{value=std::stod(body.substr(p,end-p),&used);}catch(...){throw Failure("Invalid JSON number array: "+key);}if(!used||!std::isfinite(value))throw Failure("Invalid JSON number array: "+key);values.push_back(value);p+=used-1;}return values;
+}
 static bool send_email_code(const std::string& to_email,const std::string& code,std::string& err_out){
  const char* smtp_host_env=std::getenv("MORFO_SMTP_HOST");
  std::string smtp_host=smtp_host_env?smtp_host_env:"";
@@ -1056,6 +1059,10 @@ static std::string metric_result_json(const morfo::root_metrics::Result& result,
   <<",\"isolated_skeleton_pixels\":"<<result.isolated_skeleton_pixels<<",\"apparent_branches\":"<<result.apparent_branches
   <<",\"branch_incident_arms\":[";
  for(std::size_t index=0;index<result.branch_incident_arms.size();++index){if(index)out<<',';out<<result.branch_incident_arms[index];}
+ out<<"],\"mean_diameter\":"<<optional_number(result.mean_diameter)<<",\"min_diameter\":"<<optional_number(result.min_diameter)
+  <<",\"max_diameter\":"<<optional_number(result.max_diameter)<<",\"measurable_diameter_length_fraction\":"<<result.measurable_diameter_length_fraction
+  <<",\"diameter_unit\":"<<q(result.diameter_unit)<<",\"diameter_classes\":[";
+ for(std::size_t index=0;index<result.diameter_classes.size();++index){if(index)out<<',';const auto& item=result.diameter_classes[index];out<<"{\"lower_bound\":"<<item.lower_bound<<",\"upper_bound\":"<<optional_number(item.upper_bound)<<",\"length\":"<<item.length<<",\"percent\":"<<item.percent<<'}';}
  out<<"],\"scale_x_mm_per_pixel\":"<<optional_number(result.calibration.scale_x_mm_per_pixel)
   <<",\"scale_y_mm_per_pixel\":"<<optional_number(result.calibration.scale_y_mm_per_pixel)
   <<",\"components\":[";
@@ -1101,6 +1108,7 @@ static std::string morfo_start_metrics(const App& app,const std::string& image_i
  input.calibration.origin=json_extract_string(body,"origin");input.calibration.method=json_extract_string(body,"method");
  input.calibration.date=json_extract_string(body,"date");input.calibration.version=json_extract_string(body,"version");
  input.calibration.responsible=json_extract_string(body,"responsible");
+ input.diameter_bin_upper_bounds=json_extract_number_array(body,"diameter_bins");
  const auto result=morfo::root_metrics::compute_gate_001a(input);
  const std::string id=rand_id(),created=utc_offset(0);
  const std::string response=metric_result_json(result,id,created);
@@ -1145,11 +1153,14 @@ static std::string morfo_metrics_csv(const App& app,const std::string& image_id,
   json_extract(result_json,'$.data.projected_area_cm2'),json_extract(result_json,'$.data.scale_x_mm_per_pixel'),
   json_extract(result_json,'$.data.scale_y_mm_per_pixel'),json_extract(result_json,'$.data.skeleton_pixels'),
   json_extract(result_json,'$.data.graph_edges'),json_extract(result_json,'$.data.projected_length_px'),
-  json_extract(result_json,'$.data.projected_length_mm'),json_extract(result_json,'$.data.projected_length_cm')
+  json_extract(result_json,'$.data.projected_length_mm'),json_extract(result_json,'$.data.projected_length_cm'),
+  json_extract(result_json,'$.data.mean_diameter'),json_extract(result_json,'$.data.min_diameter'),
+  json_extract(result_json,'$.data.max_diameter'),json_extract(result_json,'$.data.measurable_diameter_length_fraction'),
+  json_extract(result_json,'$.data.diameter_unit')
  FROM morfo_root_metric_runs WHERE profile_run_id=? AND image_id=? AND user_id=? AND deleted_at IS NULL ORDER BY created_at DESC,rowid DESC LIMIT 1)SQL");
  run.bind(1,profile_run_id);run.bind(2,image_id);run.bind(3,user_id);if(sqlite3_step(run.p)!=SQLITE_ROW)throw Failure("Root metric run not found");
  auto value=[&](int column){return sqlite3_column_type(run.p,column)==SQLITE_NULL?std::string(""):col(run.p,column);};
- std::ostringstream out;out<<"# MORFO-ROOT-METRICS-001B\r\n"
+ std::ostringstream out;out<<"# MORFO-ROOT-METRICS-001C\r\n"
   <<"# metric_run_id,"<<csv_cell(col(run.p,0))<<"\r\n# profile_run_id,"<<csv_cell(profile_run_id)
   <<"\r\n# image_id,"<<csv_cell(image_id)<<"\r\n# metrics_version,"<<csv_cell(col(run.p,1))
   <<"\r\n# mask_sha256,"<<csv_cell(col(run.p,2))<<"\r\n# created_at,"<<csv_cell(col(run.p,3))
@@ -1159,10 +1170,13 @@ static std::string morfo_metrics_csv(const App& app,const std::string& image_id,
   <<"\r\n# projected_area_mm2,"<<value(11)<<"\r\n# projected_area_cm2,"<<value(12)
   <<"\r\n# scale_x_mm_per_pixel,"<<value(13)<<"\r\n# scale_y_mm_per_pixel,"<<value(14)
   <<"\r\n# skeleton_pixels,"<<value(15)<<"\r\n# graph_edges,"<<value(16)<<"\r\n# projected_length_px,"<<value(17)
-  <<"\r\n# projected_length_mm,"<<value(18)<<"\r\n# projected_length_cm,"<<value(19)<<"\r\n"
+  <<"\r\n# projected_length_mm,"<<value(18)<<"\r\n# projected_length_cm,"<<value(19)
+  <<"\r\n# mean_diameter,"<<value(20)<<"\r\n# min_diameter,"<<value(21)<<"\r\n# max_diameter,"<<value(22)
+  <<"\r\n# measurable_diameter_length_fraction,"<<value(23)<<"\r\n# diameter_unit,"<<value(24)<<"\r\n"
   <<"component_id,area_px,area_mm2,centroid_x_px,centroid_y_px,min_x,min_y,max_x,max_y,touches_image_boundary,touches_roi_boundary,touches_abstained_area,skeleton_pixels,graph_edges,projected_length_px,projected_length_mm,projected_length_cm\r\n";
  Stmt components(db.p,"SELECT component_id,area_px,area_mm2,centroid_x,centroid_y,min_x,min_y,max_x,max_y,touches_image_boundary,touches_roi_boundary,touches_abstained_area,skeleton_pixels,graph_edges,projected_length_px,projected_length_mm,projected_length_cm FROM morfo_root_metric_components WHERE metric_run_id=? ORDER BY component_id");components.bind(1,col(run.p,0));
  while(sqlite3_step(components.p)==SQLITE_ROW){for(int column=0;column<17;++column){if(column)out<<',';if(sqlite3_column_type(components.p,column)!=SQLITE_NULL)out<<col(components.p,column);}out<<"\r\n";}
+ out<<"\r\ndiameter_lower_bound,diameter_upper_bound,length,percent\r\n";Stmt classes(db.p,"SELECT json_extract(value,'$.lower_bound'),json_extract(value,'$.upper_bound'),json_extract(value,'$.length'),json_extract(value,'$.percent') FROM json_each((SELECT result_json FROM morfo_root_metric_runs WHERE id=?),'$.data.diameter_classes')");classes.bind(1,col(run.p,0));while(sqlite3_step(classes.p)==SQLITE_ROW){for(int column=0;column<4;++column){if(column)out<<',';if(sqlite3_column_type(classes.p,column)!=SQLITE_NULL)out<<col(classes.p,column);}out<<"\r\n";}
  return out.str();
 }
 

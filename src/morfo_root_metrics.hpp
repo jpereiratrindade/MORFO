@@ -8,7 +8,7 @@
 
 namespace morfo::root_metrics {
 
-inline constexpr const char* algorithm_version="morfo-root-metrics-001c-topology-0.3.0";
+inline constexpr const char* algorithm_version="morfo-root-metrics-001c-0.3.0";
 inline constexpr const char* scientific_status="NOT_VALIDATED";
 inline constexpr const char* result_nature=
  "Morfometria bidimensional de candidatos radiculares detectados pelo EXP-003";
@@ -67,6 +67,14 @@ struct Input {
  std::string profile="roots-exp003";
  std::string profile_version;
  std::string profile_parameters_json;
+ std::vector<double> diameter_bin_upper_bounds;
+};
+
+struct DiameterClass {
+ double lower_bound=0.0;
+ std::optional<double> upper_bound;
+ double length=0.0;
+ double percent=0.0;
 };
 
 struct Result {
@@ -90,6 +98,12 @@ struct Result {
  std::uint64_t isolated_skeleton_pixels=0;
  std::uint64_t apparent_branches=0;
  std::vector<std::uint64_t> branch_incident_arms;
+ std::optional<double> mean_diameter;
+ std::optional<double> min_diameter;
+ std::optional<double> max_diameter;
+ double measurable_diameter_length_fraction=0.0;
+ std::string diameter_unit="px";
+ std::vector<DiameterClass> diameter_classes;
  std::vector<ComponentMetrics> components;
  Calibration calibration;
  std::string mask_run_id;

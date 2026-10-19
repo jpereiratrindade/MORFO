@@ -88,7 +88,7 @@
       a.target='_blank';a.rel='noopener';links.append(a);
     }
     const metrics=renderMetrics();
-    const note=node('p',{className:'morfo-method-note',text:'Morfometria descreve candidatos bidimensionais do EXP-003; não confirma identidade biológica. Comprimento projetado está disponível no Gate 001B; diâmetro e topologia pertencem ao Gate 001C.'});
+    const note=node('p',{className:'morfo-method-note',text:'Morfometria descreve candidatos bidimensionais do EXP-003; não confirma identidade biológica. Diâmetros usam EDT centro a centro; objetos truncados são censurados.'});
     const planned=node('p',{className:'morfo-planned',text:'Revisão pixel a pixel e descoberta geral de categorias: planejadas, ainda indisponíveis.'});
     wrap.append(eyebrow,title,status,dl,dl2,links,metrics,note,planned);
     panel.replaceChildren(wrap);
@@ -102,6 +102,7 @@
       <label>Escala Y <span>mm/pixel</span><input id="metric-scale-y" type="number" min="0" step="any" placeholder="opcional"></label>
       <label class="metric-calibration-picker">Calibração salva <select id="metric-calibration"><option value="">Sem calibração física</option>${state.calibrations.map(c=>`<option value="${c.id}">${c.source_type} · ${c.scale_x_mm_per_pixel} × ${c.scale_y_mm_per_pixel} mm/px${c.verified?' · verificada':' · indicação'}</option>`).join('')}</select></label>
       <label class="metric-calibration-picker">Origem da escala <select id="metric-calibration-source"><option value="MANUAL">Informada manualmente</option><option value="IMAGE_REFERENCE">Referência física na imagem</option><option value="EQUIPMENT_METADATA">Indicação dos metadados/equipamento</option></select></label>
+      <label class="metric-calibration-picker">Limites das classes de diâmetro <span>mm, separados por vírgula</span><input id="metric-diameter-bins" value="0.5, 1.0, 2.0" inputmode="decimal"></label>
       <button type="button" id="metric-save-calibration" class="metric-secondary">Salvar indicação de escala</button>
       <button type="submit" class="morfo-run">Calcular morfometria</button>`;
     form.querySelector('#metric-calibration').addEventListener('change',event=>{const c=state.calibrations.find(item=>item.id===event.target.value);$('metric-scale-x').value=c?.scale_x_mm_per_pixel??'';$('metric-scale-y').value=c?.scale_y_mm_per_pixel??'';});
@@ -118,12 +119,16 @@
       ['Pixels do esqueleto',number.format(m.skeleton_pixels||0)],['Arestas do grafo',number.format(m.graph_edges||0)],
       ['Pontas aparentes',number.format(m.apparent_tips||0)],['Ramificações aparentes',number.format(m.apparent_branches||0)],
       ['Pixels isolados',number.format(m.isolated_skeleton_pixels||0)],['Pontas truncadas',number.format(m.truncated_tips||0)],
+      ['Diâmetro médio',m.mean_diameter==null?'Censurado/indisponível':`${fmt(m.mean_diameter,4)} ${m.diameter_unit}`],
+      ['Faixa de diâmetro',m.min_diameter==null?'Indisponível':`${fmt(m.min_diameter,3)}–${fmt(m.max_diameter,3)} ${m.diameter_unit}`],
+      ['Comprimento mensurável',`${fmt(100*(m.measurable_diameter_length_fraction||0),1)}%`],
       ['Pixels válidos',number.format(m.valid_pixels)],['Matriz',number.format(m.matrix_pixels)],['Excluídos/abstidos',number.format(m.excluded_or_abstained_pixels)]];
     for(const [key,value] of values)stats.append(node('dt',{text:key}),node('dd',{text:value}));section.append(stats);
     const table=node('div',{className:'root-metrics-table-wrap'});table.innerHTML='<table><thead><tr><th>ID</th><th>Área</th><th>Comprimento</th><th>Centroide</th><th>Limites</th></tr></thead><tbody></tbody></table>';
     const tbody=table.querySelector('tbody');for(const c of (m.components||[]).slice(0,100)){
       const tr=node('tr');for(const value of [c.id,`${number.format(c.area_px)} px²`,c.projected_length_mm==null?`${fmt(c.projected_length_px,2)} px`:`${fmt(c.projected_length_mm,3)} mm`,`${fmt(c.centroid_x_px,1)}, ${fmt(c.centroid_y_px,1)}`,`${c.bounding_box.min_x},${c.bounding_box.min_y}–${c.bounding_box.max_x},${c.bounding_box.max_y}`])tr.append(node('td',{text:String(value)}));tbody.append(tr);
     }section.append(table);
+    if(m.diameter_classes?.length){const histogram=node('div',{className:'diameter-histogram'});histogram.append(node('strong',{text:'Comprimento por classe de diâmetro'}));for(const item of m.diameter_classes){const label=`${fmt(item.lower_bound,2)}–${item.upper_bound==null?'∞':fmt(item.upper_bound,2)} ${m.diameter_unit}`;const row=node('div',{className:'diameter-bin'});row.append(node('span',{text:label}),node('i',{'aria-hidden':'true'}),node('b',{text:`${fmt(item.percent,1)}%`}));row.querySelector('i').style.setProperty('--diameter-percent',`${Math.max(0,Math.min(100,item.percent))}%`);histogram.append(row);}section.append(histogram);}
     const exports=node('nav',{className:'root-metrics-exports','aria-label':'Exportar dados morfométricos'});
     for(const [format,label] of [['csv','Exportar CSV'],['json','Exportar JSON']])exports.append(node('a',{href:metricsExportPath(state.imageId,state.run.id,format),download:`morfo-morfometria-${state.run.id}.${format}`,text:label}));
     section.append(exports);
@@ -137,8 +142,8 @@
     const x=$('metric-scale-x').value.trim(),y=$('metric-scale-y').value.trim();
     if((x&&!y)||(!x&&y)){message('Informe ambas escalas X e Y, ou deixe ambas vazias.','error');return;}
     const submitter=event.submitter;state.busy=true;if(submitter)submitter.disabled=true;message('Calculando área, ocupação e componentes na resolução original...');
-    const selected=state.calibrations.find(item=>item.id===$('metric-calibration').value);
-    try{const response=await json(metricsPath(state.imageId,state.run.id),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scale_x:x?Number(x):null,scale_y:y?Number(y):null,origin:selected?.source_type||(x?'MANUAL':''),method:selected?.method||(x?'manual':''),date:new Date().toISOString(),version:selected?.version||'ui-001a',responsible:selected?.responsible||''})});state.metrics=response.data;await loadMetricLists();renderPanel();message('Morfometria Gate 001A calculada e persistida.');}
+    const selected=state.calibrations.find(item=>item.id===$('metric-calibration').value);const bins=x?$('metric-diameter-bins').value.split(',').map(value=>Number(value.trim())).filter(Number.isFinite):[];
+    try{const response=await json(metricsPath(state.imageId,state.run.id),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scale_x:x?Number(x):null,scale_y:y?Number(y):null,diameter_bins:bins,origin:selected?.source_type||(x?'MANUAL':''),method:selected?.method||(x?'manual':''),date:new Date().toISOString(),version:selected?.version||'ui-001c',responsible:selected?.responsible||''})});state.metrics=response.data;await loadMetricLists();renderPanel();message('Morfometria Gate 001C calculada e persistida.');}
     catch(error){message(`Falha na morfometria: ${error.message}`,'error');}
     finally{state.busy=false;if(submitter&&submitter.isConnected)submitter.disabled=false;}
   }
@@ -207,7 +212,7 @@
       if(epoch!==state.generation||imageId!==state.imageId)return;
       if(!metricResponse.data){
         message('Primeira abertura: calculando morfometria determinística sem escala física...');
-        metricResponse=await json(metricsPath(imageId,id),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scale_x:null,scale_y:null,origin:'',method:'',date:new Date().toISOString(),version:'auto-001b',responsible:''})});
+        metricResponse=await json(metricsPath(imageId,id),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scale_x:null,scale_y:null,diameter_bins:[],origin:'',method:'',date:new Date().toISOString(),version:'auto-001c',responsible:''})});
         if(epoch!==state.generation||imageId!==state.imageId)return;
       }
       state.metrics=metricResponse.data;

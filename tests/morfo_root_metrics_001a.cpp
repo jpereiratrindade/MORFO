@@ -14,7 +14,7 @@ RasterMask raster(std::size_t width,std::size_t height,std::uint8_t value=0){
 }
 void set(RasterMask& value,std::size_t x,std::size_t y){value.pixels[y*value.width+x]=1;}
 Input basic(std::size_t width,std::size_t height){
- return {raster(width,height),raster(width,height,1),raster(width,height,1),{},"run-1","sha-1","roots-exp003","exp003-original-0.1.0","{}"};
+ return {raster(width,height),raster(width,height,1),raster(width,height,1),{},"run-1","sha-1","roots-exp003","exp003-original-0.1.0","{}",{}};
 }
 bool close(double left,double right){return std::abs(left-right)<1e-10;}
 }
@@ -140,5 +140,21 @@ int main(){
   auto input=basic(7,7);for(std::size_t x=2;x<=4;++x){set(input.mask,x,2);set(input.mask,x,4);}set(input.mask,2,3);set(input.mask,4,3);
   const auto result=compute_gate_001a(input);
   assert(result.apparent_tips==0);
+ }
+ {
+  auto input=basic(9,9);for(std::size_t y=3;y<=5;++y)for(std::size_t x=1;x<=7;++x)set(input.mask,x,y);
+  input.calibration.scale_x_mm_per_pixel=0.5;input.calibration.scale_y_mm_per_pixel=0.5;
+  const auto result=compute_gate_001a(input);
+  assert(result.mean_diameter&&close(*result.mean_diameter,2.0));
+  assert(result.min_diameter&&close(*result.min_diameter,2.0));
+  assert(result.max_diameter&&close(*result.max_diameter,2.0));
+  assert(close(result.measurable_diameter_length_fraction,1.0));
+  assert(result.diameter_unit=="mm"&&result.diameter_classes.size()==4);
+  assert(close(result.diameter_classes[3].percent,100.0));
+ }
+ {
+  auto input=basic(9,9);for(std::size_t y=3;y<=5;++y)for(std::size_t x=0;x<=7;++x)set(input.mask,x,y);
+  const auto result=compute_gate_001a(input);
+  assert(!result.mean_diameter&&close(result.measurable_diameter_length_fraction,0.0));
  }
 }
