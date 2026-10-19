@@ -88,7 +88,7 @@
       a.target='_blank';a.rel='noopener';links.append(a);
     }
     const metrics=renderMetrics();
-    const note=node('p',{className:'morfo-method-note',text:'Morfometria descreve candidatos bidimensionais do EXP-003; não confirma identidade biológica. Comprimento e diâmetro ainda não pertencem ao Gate 001A.'});
+    const note=node('p',{className:'morfo-method-note',text:'Morfometria descreve candidatos bidimensionais do EXP-003; não confirma identidade biológica. Comprimento projetado está disponível no Gate 001B; diâmetro e topologia pertencem ao Gate 001C.'});
     const planned=node('p',{className:'morfo-planned',text:'Revisão pixel a pixel e descoberta geral de categorias: planejadas, ainda indisponíveis.'});
     wrap.append(eyebrow,title,status,dl,dl2,links,metrics,note,planned);
     panel.replaceChildren(wrap);
@@ -96,7 +96,7 @@
 
   function renderMetrics(){
     const section=node('section',{className:'root-metrics'});
-    section.append(node('p',{className:'morfo-eyebrow',text:'RAÍZES → MORFOMETRIA'}),node('h3',{text:'Área e componentes · Gate 001A'}));
+    section.append(node('p',{className:'morfo-eyebrow',text:'RAÍZES → MORFOMETRIA'}),node('h3',{text:'Área, componentes e comprimento · Gate 001B'}));
     const form=node('form',{id:'root-metrics-form',className:'root-metrics-form'});
     form.innerHTML=`<label>Escala X <span>mm/pixel</span><input id="metric-scale-x" type="number" min="0" step="any" placeholder="opcional"></label>
       <label>Escala Y <span>mm/pixel</span><input id="metric-scale-y" type="number" min="0" step="any" placeholder="opcional"></label>
@@ -201,8 +201,13 @@
       const good=await readMask(id,report,imageId,epoch);
       if(!good)return;
       state.run=run;state.report=report;
-      const metricResponse=await json(metricsPath(imageId,id));
+      let metricResponse=await json(metricsPath(imageId,id));
       if(epoch!==state.generation||imageId!==state.imageId)return;
+      if(!metricResponse.data){
+        message('Primeira abertura: calculando morfometria determinística sem escala física...');
+        metricResponse=await json(metricsPath(imageId,id),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scale_x:null,scale_y:null,origin:'',method:'',date:new Date().toISOString(),version:'auto-001b',responsible:''})});
+        if(epoch!==state.generation||imageId!==state.imageId)return;
+      }
       state.metrics=metricResponse.data;
       await loadMetricLists();
       renderPanel();showLayer('overlay');
