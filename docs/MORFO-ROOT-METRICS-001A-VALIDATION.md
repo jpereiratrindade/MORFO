@@ -48,3 +48,24 @@ resultados de área, ocupação e componentes verificáveis pelo pesquisador.
 Cada execução pode ser exportada pelo painel em JSON, preservando o contrato
 completo, ou CSV RFC 4180. O CSV registra proveniência e métricas agregadas em
 linhas iniciadas por `#`, seguidas de tabela com um registro por componente.
+
+## Registros, CRUD e calibração
+
+Cada cálculo cria nova execução em `morfo_root_metric_runs`; componentes ficam em
+`morfo_root_metric_components`. Resultados e proveniência são imutáveis. O CRUD
+permite listar e consultar execuções, alterar somente `status` e `notes`, e fazer
+exclusão lógica. Recalcular nunca sobrescreve execução anterior.
+
+Calibrações pertencem à imagem e têm CRUD próprio em
+`morfo_image_calibrations`. A origem distingue `MANUAL`, `IMAGE_REFERENCE` e
+`EQUIPMENT_METADATA`. Densidade de pixels ou resolução declarada em metadados
+pode indicar escala pela relação `mm/px = 25,4 / DPI`, mas permanece não
+verificada até confirmação de responsável: DPI de apresentação, digitalização
+ou impressão não prova sozinho escala física do objeto capturado.
+
+Recursos HTTP autenticados:
+
+- `GET|POST /api/v1/images/{image}/calibrations`
+- `PATCH|DELETE /api/v1/calibrations/{calibration}`
+- `GET /api/v1/images/{image}/profiles/roots-exp003/{run}/metrics/runs`
+- `GET|PATCH|DELETE /api/v1/root-metrics/{metric}`

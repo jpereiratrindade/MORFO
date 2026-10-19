@@ -6,13 +6,14 @@
 
   const $ = id => document.getElementById(id);
   const number = new Intl.NumberFormat('pt-BR');
-  const state = { imageId:null, imageMeta:null, runs:[], run:null, report:null, metrics:null,
+  const state = { imageId:null, imageMeta:null, runs:[], run:null, report:null, metrics:null, metricRuns:[], calibrations:[],
                   layer:'original', opacity:0.85, generation:0, busy:false, profileAvailable:true };
   const profile = 'roots-exp003';
   const rootPath = id => `/api/v1/images/${encodeURIComponent(id)}/profiles/${profile}`;
   const artifactPath = (id,run,kind) => `${rootPath(id)}/${encodeURIComponent(run)}/${kind}`;
   const metricsPath = (id,run) => `${rootPath(id)}/${encodeURIComponent(run)}/metrics`;
   const metricsExportPath = (id,run,format) => `${metricsPath(id,run)}/export.${format}`;
+  const calibrationPath = id => `/api/v1/images/${encodeURIComponent(id)}/calibrations`;
   let workspace, layer, panel;
 
   function node(tag, props={}, children=[]) {
@@ -51,7 +52,7 @@
 
   function clearVisual() {
     if(layer){layer.removeAttribute('src');layer.classList.add('hidden');layer.style.opacity='1';}
-    state.run=null;state.report=null;state.metrics=null;state.layer='original';
+    state.run=null;state.report=null;state.metrics=null;state.metricRuns=[];state.layer='original';
     refreshLayers();
   }
 
@@ -99,8 +100,14 @@
     const form=node('form',{id:'root-metrics-form',className:'root-metrics-form'});
     form.innerHTML=`<label>Escala X <span>mm/pixel</span><input id="metric-scale-x" type="number" min="0" step="any" placeholder="opcional"></label>
       <label>Escala Y <span>mm/pixel</span><input id="metric-scale-y" type="number" min="0" step="any" placeholder="opcional"></label>
+      <label class="metric-calibration-picker">Calibração salva <select id="metric-calibration"><option value="">Sem calibração física</option>${state.calibrations.map(c=>`<option value="${c.id}">${c.source_type} · ${c.scale_x_mm_per_pixel} × ${c.scale_y_mm_per_pixel} mm/px${c.verified?' · verificada':' · indicação'}</option>`).join('')}</select></label>
+      <label class="metric-calibration-picker">Origem da escala <select id="metric-calibration-source"><option value="MANUAL">Informada manualmente</option><option value="IMAGE_REFERENCE">Referência física na imagem</option><option value="EQUIPMENT_METADATA">Indicação dos metadados/equipamento</option></select></label>
+      <button type="button" id="metric-save-calibration" class="metric-secondary">Salvar indicação de escala</button>
       <button type="submit" class="morfo-run">Calcular morfometria</button>`;
+    form.querySelector('#metric-calibration').addEventListener('change',event=>{const c=state.calibrations.find(item=>item.id===event.target.value);$('metric-scale-x').value=c?.scale_x_mm_per_pixel??'';$('metric-scale-y').value=c?.scale_y_mm_per_pixel??'';});
+    form.querySelector('#metric-save-calibration').addEventListener('click',saveCalibration);
     form.addEventListener('submit',startMetrics);section.append(form);
+    if(state.metricRuns.length){const history=node('label',{className:'metric-history'});history.append(node('span',{text:'Histórico morfométrico'}));const select=node('select',{id:'metric-run-history'});for(const run of state.metricRuns)select.append(node('option',{value:run.id,text:`${run.created_at} · ${run.status} · ${run.id.slice(0,8)}`}));select.value=state.metrics?.id||'';select.addEventListener('change',()=>loadMetricRun(select.value));history.append(select);section.append(history);}
     const m=state.metrics;
     if(!m){section.append(node('p',{className:'root-metrics-empty',text:'Nenhuma execução morfométrica para esta máscara.'}));return section;}
     const stats=node('dl',{className:'root-metrics-stats'});
@@ -116,6 +123,8 @@
     const exports=node('nav',{className:'root-metrics-exports','aria-label':'Exportar dados morfométricos'});
     for(const [format,label] of [['csv','Exportar CSV'],['json','Exportar JSON']])exports.append(node('a',{href:metricsExportPath(state.imageId,state.run.id,format),download:`morfo-morfometria-${state.run.id}.${format}`,text:label}));
     section.append(exports);
+    const record=node('form',{className:'metric-record-form'});record.innerHTML=`<label>Estado<select id="metric-record-status"><option>NOT_VALIDATED</option><option>REVIEWED</option><option>ARCHIVED</option></select></label><label>Notas<input id="metric-record-notes" maxlength="2000" value=""></label><button type="submit">Salvar registro</button><button type="button" class="metric-delete">Excluir</button>`;
+    const listed=state.metricRuns.find(item=>item.id===m.id);record.querySelector('#metric-record-status').value=m.record_status||listed?.status||'NOT_VALIDATED';record.querySelector('#metric-record-notes').value=m.notes||listed?.notes||'';record.addEventListener('submit',updateMetricRecord);record.querySelector('.metric-delete').addEventListener('click',deleteMetricRecord);section.append(record);
     section.append(node('p',{className:'root-metrics-provenance',text:`${m.scientific_status} · ${m.metrics_version} · ${m.id}`}));return section;
   }
 
@@ -124,10 +133,17 @@
     const x=$('metric-scale-x').value.trim(),y=$('metric-scale-y').value.trim();
     if((x&&!y)||(!x&&y)){message('Informe ambas escalas X e Y, ou deixe ambas vazias.','error');return;}
     const submitter=event.submitter;state.busy=true;if(submitter)submitter.disabled=true;message('Calculando área, ocupação e componentes na resolução original...');
-    try{const response=await json(metricsPath(state.imageId,state.run.id),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scale_x:x?Number(x):null,scale_y:y?Number(y):null,origin:x?'manual':'',method:x?'manual':'',date:new Date().toISOString(),version:'ui-001a'})});state.metrics=response.data;renderPanel();message('Morfometria Gate 001A calculada e persistida.');}
+    const selected=state.calibrations.find(item=>item.id===$('metric-calibration').value);
+    try{const response=await json(metricsPath(state.imageId,state.run.id),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scale_x:x?Number(x):null,scale_y:y?Number(y):null,origin:selected?.source_type||(x?'MANUAL':''),method:selected?.method||(x?'manual':''),date:new Date().toISOString(),version:selected?.version||'ui-001a',responsible:selected?.responsible||''})});state.metrics=response.data;await loadMetricLists();renderPanel();message('Morfometria Gate 001A calculada e persistida.');}
     catch(error){message(`Falha na morfometria: ${error.message}`,'error');}
     finally{state.busy=false;if(submitter&&submitter.isConnected)submitter.disabled=false;}
   }
+
+  async function loadMetricLists(){if(!state.imageId||!state.run)return;const [runs,calibrations]=await Promise.all([json(`${metricsPath(state.imageId,state.run.id)}/runs`),json(calibrationPath(state.imageId))]);state.metricRuns=runs.data||[];state.calibrations=calibrations.data||[];}
+  async function loadMetricRun(id){try{const response=await json(`/api/v1/root-metrics/${encodeURIComponent(id)}`);state.metrics=response.data;renderPanel();}catch(error){message(`Falha ao abrir registro: ${error.message}`,'error');}}
+  async function updateMetricRecord(event){event.preventDefault();try{const response=await json(`/api/v1/root-metrics/${encodeURIComponent(state.metrics.id)}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:$('metric-record-status').value,notes:$('metric-record-notes').value})});state.metrics=response.data;await loadMetricLists();renderPanel();message('Registro morfométrico atualizado.');}catch(error){message(`Falha ao atualizar: ${error.message}`,'error');}}
+  async function deleteMetricRecord(){if(!state.metrics||!confirm('Excluir esta execução morfométrica do histórico ativo?'))return;try{await json(`/api/v1/root-metrics/${encodeURIComponent(state.metrics.id)}`,{method:'DELETE'});state.metrics=null;await loadMetricLists();if(state.metricRuns.length)await loadMetricRun(state.metricRuns[0].id);else renderPanel();message('Execução removida do histórico ativo.');}catch(error){message(`Falha ao excluir: ${error.message}`,'error');}}
+  async function saveCalibration(){const x=$('metric-scale-x').value.trim(),y=$('metric-scale-y').value.trim();if(!x||!y){message('Informe escalas X e Y para salvar.','error');return;}const source=$('metric-calibration-source').value;try{const response=await json(calibrationPath(state.imageId),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scale_x:Number(x),scale_y:Number(y),source_type:source,source_detail:source==='EQUIPMENT_METADATA'?'Indicação declarada a partir dos metadados/equipamento':'Informada na interface',method:source.toLowerCase(),version:'ui-001a',responsible:'',verified:false,notes:source==='EQUIPMENT_METADATA'?'Requer verificação do significado metrológico dos metadados.':''})});state.calibrations=response.data||[];renderPanel();message('Escala salva como indicação não verificada.');}catch(error){message(`Falha ao salvar calibração: ${error.message}`,'error');}}
 
   function refreshLayers() {
     if(!workspace)return;
@@ -186,6 +202,7 @@
       const metricResponse=await json(metricsPath(imageId,id));
       if(epoch!==state.generation||imageId!==state.imageId)return;
       state.metrics=metricResponse.data;
+      await loadMetricLists();
       renderPanel();showLayer('overlay');
       message(`Execução ${id} carregada. Candidatos visuais; validação biológica pendente.`);
     }catch(error){
@@ -289,7 +306,7 @@
     state.generation++;
     state.imageId=imageId||null;
     state.imageMeta=window.MORFO_Bridge?.activeImageMeta?.()||null;
-    state.runs=[];
+    state.runs=[];state.calibrations=[];
     state.busy=false;
     const picker=$('morfo-history');
     picker.replaceChildren(node('option',{value:'',text:'Consultando histórico...'}));picker.disabled=true;
@@ -300,7 +317,7 @@
 
   function onImageClosed(){
     state.generation++;
-    state.imageId=null;state.imageMeta=null;state.runs=[];state.busy=false;
+    state.imageId=null;state.imageMeta=null;state.runs=[];state.calibrations=[];state.busy=false;
     clearVisual();renderPanel();
   }
 

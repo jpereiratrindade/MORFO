@@ -33,6 +33,9 @@ void create_schema(sqlite3* db) {
   mask_sha256 TEXT NOT NULL,
   calibration_json TEXT NOT NULL,
   result_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'NOT_VALIDATED',
+  notes TEXT NOT NULL DEFAULT '',
+  deleted_at TEXT,
   created_at TEXT NOT NULL
  );
  CREATE INDEX IF NOT EXISTS idx_morfo_root_metric_runs_profile ON morfo_root_metric_runs(profile_run_id,created_at DESC);
@@ -49,12 +52,41 @@ void create_schema(sqlite3* db) {
   touches_abstained_area INTEGER NOT NULL,
   PRIMARY KEY(metric_run_id,component_id)
  );
+ CREATE TABLE IF NOT EXISTS morfo_image_calibrations (
+  id TEXT PRIMARY KEY,
+  image_id TEXT NOT NULL REFERENCES images(id),
+  user_id TEXT NOT NULL REFERENCES users(id),
+  source_type TEXT NOT NULL CHECK(source_type IN('MANUAL','IMAGE_REFERENCE','EQUIPMENT_METADATA')),
+  scale_x_mm_per_pixel REAL NOT NULL CHECK(scale_x_mm_per_pixel>0),
+  scale_y_mm_per_pixel REAL NOT NULL CHECK(scale_y_mm_per_pixel>0),
+  source_detail TEXT NOT NULL DEFAULT '',
+  method TEXT NOT NULL DEFAULT '',
+  version TEXT NOT NULL DEFAULT '',
+  responsible TEXT NOT NULL DEFAULT '',
+  verified INTEGER NOT NULL DEFAULT 0 CHECK(verified IN(0,1)),
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  deleted_at TEXT
+ );
+ CREATE INDEX IF NOT EXISTS idx_morfo_image_calibrations_image ON morfo_image_calibrations(image_id,created_at DESC);
  )SQL";
  char* error=nullptr;
  if(sqlite3_exec(db,schema,nullptr,nullptr,&error)!=SQLITE_OK){
   std::string message=error?error:"schema error";sqlite3_free(error);
   throw std::runtime_error("MORFO profile schema: "+message);
  }
+ auto has_column=[&](const char* table,const char* wanted){
+  sqlite3_stmt* statement=nullptr;const std::string query="PRAGMA table_info("+std::string(table)+")";
+  if(sqlite3_prepare_v2(db,query.c_str(),-1,&statement,nullptr)!=SQLITE_OK)throw std::runtime_error("MORFO schema inspection failed");
+  bool found=false;while(sqlite3_step(statement)==SQLITE_ROW){const auto* name=sqlite3_column_text(statement,1);if(name&&wanted==std::string(reinterpret_cast<const char*>(name))){found=true;break;}}
+  sqlite3_finalize(statement);return found;
+ };
+ for(const auto& [column,definition]:std::initializer_list<std::pair<const char*,const char*>>{{"status","TEXT NOT NULL DEFAULT 'NOT_VALIDATED'"},{"notes","TEXT NOT NULL DEFAULT ''"},{"deleted_at","TEXT"}})
+  if(!has_column("morfo_root_metric_runs",column)){
+   const std::string alter="ALTER TABLE morfo_root_metric_runs ADD COLUMN "+std::string(column)+" "+definition;
+   if(sqlite3_exec(db,alter.c_str(),nullptr,nullptr,&error)!=SQLITE_OK){std::string message=error?error:"schema alter error";sqlite3_free(error);throw std::runtime_error("MORFO profile schema: "+message);}
+  }
 }
 std::string registry_json(){
  return R"JSON({"data":[{"id":"roots-exp003","theme":"roots","name":"Raízes · Matriz adaptativa EXP-003","version":"exp003-original-0.1.0","status":"EXPERIMENTAL","output_semantics":"ANOMALY_CANDIDATE","biological_validation":"NOT_VALIDATED"},{"id":"discovery","theme":"generic","name":"Descoberta emergente REA/RIT","status":"PLANNED","output_semantics":"UNIMPLEMENTED"}]})JSON";

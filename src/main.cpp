@@ -1092,7 +1092,7 @@ static std::string morfo_start_metrics(const App& app,const std::string& image_i
  std::ostringstream calibration;calibration<<"{\"scale_x\":"<<(input.calibration.scale_x_mm_per_pixel?std::to_string(*input.calibration.scale_x_mm_per_pixel):"null")
   <<",\"scale_y\":"<<(input.calibration.scale_y_mm_per_pixel?std::to_string(*input.calibration.scale_y_mm_per_pixel):"null")<<",\"method\":"<<q(input.calibration.method)<<'}';
  sql(db.p,"BEGIN IMMEDIATE");try{
-  Stmt insert(db.p,"INSERT INTO morfo_root_metric_runs(id,profile_run_id,image_id,user_id,metrics_version,mask_sha256,calibration_json,result_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)");
+  Stmt insert(db.p,"INSERT INTO morfo_root_metric_runs(id,profile_run_id,image_id,user_id,metrics_version,mask_sha256,calibration_json,result_json,status,notes,created_at) VALUES(?,?,?,?,?,?,?,?,'NOT_VALIDATED','',?)");
   insert.bind(1,id);insert.bind(2,profile_run_id);insert.bind(3,image_id);insert.bind(4,user_id);insert.bind(5,result.metrics_version);insert.bind(6,mask_sha);insert.bind(7,calibration.str());insert.bind(8,response);insert.bind(9,created);
   if(sqlite3_step(insert.p)!=SQLITE_DONE)throw Failure("Could not persist root metric run");
   for(const auto& component:result.components){
@@ -1110,7 +1110,7 @@ static std::string morfo_start_metrics(const App& app,const std::string& image_i
 }
 
 static std::string morfo_latest_metrics(const App& app,const std::string& image_id,const std::string& profile_run_id,const std::string& user_id){
- Db db(app.root/"morfo.sqlite3");Stmt st(db.p,"SELECT result_json FROM morfo_root_metric_runs WHERE profile_run_id=? AND image_id=? AND user_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1");
+ Db db(app.root/"morfo.sqlite3");Stmt st(db.p,"SELECT result_json FROM morfo_root_metric_runs WHERE profile_run_id=? AND image_id=? AND user_id=? AND deleted_at IS NULL ORDER BY created_at DESC,rowid DESC LIMIT 1");
  st.bind(1,profile_run_id);st.bind(2,image_id);st.bind(3,user_id);
  if(sqlite3_step(st.p)!=SQLITE_ROW)return "{\"data\":null}";return col(st.p,0);
 }
@@ -1124,7 +1124,7 @@ static std::string morfo_metrics_csv(const App& app,const std::string& image_id,
   json_extract(result_json,'$.data.occupancy_percent'),json_extract(result_json,'$.data.projected_area_mm2'),
   json_extract(result_json,'$.data.projected_area_cm2'),json_extract(result_json,'$.data.scale_x_mm_per_pixel'),
   json_extract(result_json,'$.data.scale_y_mm_per_pixel')
- FROM morfo_root_metric_runs WHERE profile_run_id=? AND image_id=? AND user_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1)SQL");
+ FROM morfo_root_metric_runs WHERE profile_run_id=? AND image_id=? AND user_id=? AND deleted_at IS NULL ORDER BY created_at DESC,rowid DESC LIMIT 1)SQL");
  run.bind(1,profile_run_id);run.bind(2,image_id);run.bind(3,user_id);if(sqlite3_step(run.p)!=SQLITE_ROW)throw Failure("Root metric run not found");
  auto value=[&](int column){return sqlite3_column_type(run.p,column)==SQLITE_NULL?std::string(""):col(run.p,column);};
  std::ostringstream out;out<<"# MORFO-ROOT-METRICS-001A\r\n"
@@ -1141,6 +1141,42 @@ static std::string morfo_metrics_csv(const App& app,const std::string& image_id,
  while(sqlite3_step(components.p)==SQLITE_ROW){for(int column=0;column<12;++column){if(column)out<<',';if(sqlite3_column_type(components.p,column)!=SQLITE_NULL)out<<col(components.p,column);}out<<"\r\n";}
  return out.str();
 }
+
+static std::string morfo_metric_runs_json(const App& app,const std::string& image_id,const std::string& profile_run_id,const std::string& user_id){
+ Db db(app.root/"morfo.sqlite3");Stmt st(db.p,R"SQL(SELECT id,metrics_version,status,notes,created_at,
+ json_extract(result_json,'$.data.candidate_pixels'),json_extract(result_json,'$.data.occupancy_percent'),
+ json_extract(result_json,'$.data.projected_area_mm2'),json_array_length(json_extract(result_json,'$.data.components'))
+ FROM morfo_root_metric_runs WHERE profile_run_id=? AND image_id=? AND user_id=? AND deleted_at IS NULL ORDER BY created_at DESC,rowid DESC)SQL");
+ st.bind(1,profile_run_id);st.bind(2,image_id);st.bind(3,user_id);std::ostringstream out;out<<"{\"data\":[";bool first=true;
+ while(sqlite3_step(st.p)==SQLITE_ROW){if(!first)out<<',';first=false;out<<"{\"id\":"<<q(col(st.p,0))<<",\"metrics_version\":"<<q(col(st.p,1))<<",\"status\":"<<q(col(st.p,2))<<",\"notes\":"<<q(col(st.p,3))<<",\"created_at\":"<<q(col(st.p,4))<<",\"candidate_pixels\":"<<sqlite3_column_int64(st.p,5)<<",\"occupancy_percent\":"<<(sqlite3_column_type(st.p,6)==SQLITE_NULL?"null":col(st.p,6))<<",\"projected_area_mm2\":"<<(sqlite3_column_type(st.p,7)==SQLITE_NULL?"null":col(st.p,7))<<",\"components\":"<<sqlite3_column_int64(st.p,8)<<'}';}
+ return out<<"]}",out.str();
+}
+
+static std::string morfo_metric_run_json(const App& app,const std::string& metric_id,const std::string& user_id){
+ Db db(app.root/"morfo.sqlite3");Stmt st(db.p,"SELECT result_json,status,notes FROM morfo_root_metric_runs WHERE id=? AND user_id=? AND deleted_at IS NULL");st.bind(1,metric_id);st.bind(2,user_id);
+ if(sqlite3_step(st.p)!=SQLITE_ROW)throw Failure("Root metric run not found");std::string result=col(st.p,0);const auto end=result.rfind("}}");if(end==std::string::npos)throw Failure("Invalid persisted metric result");result.insert(end,",\"record_status\":"+q(col(st.p,1))+",\"notes\":"+q(col(st.p,2)));return result;
+}
+
+static std::string update_morfo_metric_run(const App& app,const std::string& metric_id,const std::string& user_id,const std::string& body){
+ const std::string status=json_extract_string(body,"status"),notes=json_extract_string(body,"notes");
+ if(status!="NOT_VALIDATED"&&status!="REVIEWED"&&status!="ARCHIVED")throw Failure("Invalid metric status");if(notes.size()>2000)throw Failure("Metric notes exceed 2000 characters");
+ Db db(app.root/"morfo.sqlite3");Stmt st(db.p,"UPDATE morfo_root_metric_runs SET status=?,notes=? WHERE id=? AND user_id=? AND deleted_at IS NULL");st.bind(1,status);st.bind(2,notes);st.bind(3,metric_id);st.bind(4,user_id);if(sqlite3_step(st.p)!=SQLITE_DONE||sqlite3_changes(db.p)!=1)throw Failure("Root metric run not found");return morfo_metric_run_json(app,metric_id,user_id);
+}
+
+static std::string delete_morfo_metric_run(const App& app,const std::string& metric_id,const std::string& user_id){
+ Db db(app.root/"morfo.sqlite3");Stmt st(db.p,"UPDATE morfo_root_metric_runs SET deleted_at=? WHERE id=? AND user_id=? AND deleted_at IS NULL");st.bind(1,utc_offset(0));st.bind(2,metric_id);st.bind(3,user_id);if(sqlite3_step(st.p)!=SQLITE_DONE||sqlite3_changes(db.p)!=1)throw Failure("Root metric run not found");return "{\"status\":\"deleted\",\"id\":"+q(metric_id)+"}";
+}
+
+static std::string calibration_row_json(sqlite3_stmt* st){std::ostringstream out;out<<"{\"id\":"<<q(col(st,0))<<",\"image_id\":"<<q(col(st,1))<<",\"source_type\":"<<q(col(st,2))<<",\"scale_x_mm_per_pixel\":"<<sqlite3_column_double(st,3)<<",\"scale_y_mm_per_pixel\":"<<sqlite3_column_double(st,4)<<",\"source_detail\":"<<q(col(st,5))<<",\"method\":"<<q(col(st,6))<<",\"version\":"<<q(col(st,7))<<",\"responsible\":"<<q(col(st,8))<<",\"verified\":"<<(sqlite3_column_int(st,9)?"true":"false")<<",\"notes\":"<<q(col(st,10))<<",\"created_at\":"<<q(col(st,11))<<",\"updated_at\":"<<q(col(st,12))<<'}';return out.str();}
+static bool json_extract_bool(const std::string& body,const std::string& key){const std::string needle="\""+key+"\"";auto p=body.find(needle);if(p==std::string::npos)return false;p=body.find(':',p+needle.size());if(p==std::string::npos)return false;++p;while(p<body.size()&&std::isspace(static_cast<unsigned char>(body[p])))++p;return body.compare(p,4,"true")==0;}
+
+static std::string image_calibrations_json(const App& app,const std::string& image_id,const std::string& user_id){Db db(app.root/"morfo.sqlite3");Stmt owned(db.p,"SELECT 1 FROM images WHERE id=? AND user_id=? AND deleted_at IS NULL");owned.bind(1,image_id);owned.bind(2,user_id);if(sqlite3_step(owned.p)!=SQLITE_ROW)throw Failure("Image not found");Stmt st(db.p,"SELECT id,image_id,source_type,scale_x_mm_per_pixel,scale_y_mm_per_pixel,source_detail,method,version,responsible,verified,notes,created_at,updated_at FROM morfo_image_calibrations WHERE image_id=? AND user_id=? AND deleted_at IS NULL ORDER BY verified DESC,created_at DESC,rowid DESC");st.bind(1,image_id);st.bind(2,user_id);std::string out="{\"data\":[";bool first=true;while(sqlite3_step(st.p)==SQLITE_ROW){if(!first)out+=',';first=false;out+=calibration_row_json(st.p);}return out+"]}";}
+
+static std::string create_image_calibration(const App& app,const std::string& image_id,const std::string& user_id,const std::string& body){const auto x=json_extract_optional_double(body,"scale_x"),y=json_extract_optional_double(body,"scale_y");if(!x||!y||*x<=0||*y<=0)throw Failure("Calibration requires positive X and Y scales");const std::string source=json_extract_string(body,"source_type");if(source!="MANUAL"&&source!="IMAGE_REFERENCE"&&source!="EQUIPMENT_METADATA")throw Failure("Invalid calibration source");const bool verified=json_extract_bool(body,"verified");if(source=="EQUIPMENT_METADATA"&&verified&&json_extract_string(body,"responsible").empty())throw Failure("Verified metadata calibration requires responsible person");Db db(app.root/"morfo.sqlite3");Stmt owned(db.p,"SELECT 1 FROM images WHERE id=? AND user_id=? AND deleted_at IS NULL");owned.bind(1,image_id);owned.bind(2,user_id);if(sqlite3_step(owned.p)!=SQLITE_ROW)throw Failure("Image not found");const std::string id=rand_id(),now=utc_offset(0);Stmt insert(db.p,"INSERT INTO morfo_image_calibrations(id,image_id,user_id,source_type,scale_x_mm_per_pixel,scale_y_mm_per_pixel,source_detail,method,version,responsible,verified,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)");insert.bind(1,id);insert.bind(2,image_id);insert.bind(3,user_id);insert.bind(4,source);sqlite3_bind_double(insert.p,5,*x);sqlite3_bind_double(insert.p,6,*y);insert.bind(7,json_extract_string(body,"source_detail"));insert.bind(8,json_extract_string(body,"method"));insert.bind(9,json_extract_string(body,"version"));insert.bind(10,json_extract_string(body,"responsible"));sqlite3_bind_int(insert.p,11,verified);insert.bind(12,json_extract_string(body,"notes"));insert.bind(13,now);insert.bind(14,now);if(sqlite3_step(insert.p)!=SQLITE_DONE)throw Failure("Could not persist calibration");return image_calibrations_json(app,image_id,user_id);}
+
+static std::string update_image_calibration(const App& app,const std::string& calibration_id,const std::string& user_id,const std::string& body){const auto x=json_extract_optional_double(body,"scale_x"),y=json_extract_optional_double(body,"scale_y");if(!x||!y||*x<=0||*y<=0)throw Failure("Calibration requires positive X and Y scales");const std::string source=json_extract_string(body,"source_type"),responsible=json_extract_string(body,"responsible");if(source!="MANUAL"&&source!="IMAGE_REFERENCE"&&source!="EQUIPMENT_METADATA")throw Failure("Invalid calibration source");const bool verified=json_extract_bool(body,"verified");if(source=="EQUIPMENT_METADATA"&&verified&&responsible.empty())throw Failure("Verified metadata calibration requires responsible person");Db db(app.root/"morfo.sqlite3");Stmt st(db.p,"UPDATE morfo_image_calibrations SET source_type=?,scale_x_mm_per_pixel=?,scale_y_mm_per_pixel=?,source_detail=?,method=?,version=?,responsible=?,verified=?,notes=?,updated_at=? WHERE id=? AND user_id=? AND deleted_at IS NULL");st.bind(1,source);sqlite3_bind_double(st.p,2,*x);sqlite3_bind_double(st.p,3,*y);st.bind(4,json_extract_string(body,"source_detail"));st.bind(5,json_extract_string(body,"method"));st.bind(6,json_extract_string(body,"version"));st.bind(7,responsible);sqlite3_bind_int(st.p,8,verified);st.bind(9,json_extract_string(body,"notes"));st.bind(10,utc_offset(0));st.bind(11,calibration_id);st.bind(12,user_id);if(sqlite3_step(st.p)!=SQLITE_DONE||sqlite3_changes(db.p)!=1)throw Failure("Calibration not found");Stmt read(db.p,"SELECT id,image_id,source_type,scale_x_mm_per_pixel,scale_y_mm_per_pixel,source_detail,method,version,responsible,verified,notes,created_at,updated_at FROM morfo_image_calibrations WHERE id=?");read.bind(1,calibration_id);sqlite3_step(read.p);return "{\"data\":"+calibration_row_json(read.p)+"}";}
+
+static std::string delete_image_calibration(const App& app,const std::string& calibration_id,const std::string& user_id){Db db(app.root/"morfo.sqlite3");Stmt st(db.p,"UPDATE morfo_image_calibrations SET deleted_at=?,updated_at=? WHERE id=? AND user_id=? AND deleted_at IS NULL");const auto now=utc_offset(0);st.bind(1,now);st.bind(2,now);st.bind(3,calibration_id);st.bind(4,user_id);if(sqlite3_step(st.p)!=SQLITE_DONE||sqlite3_changes(db.p)!=1)throw Failure("Calibration not found");return "{\"status\":\"deleted\",\"id\":"+q(calibration_id)+"}";}
 
 static Response handle(const App& app,const http::request<http::string_body>& req){
  unsigned v=req.version();std::string target(req.target());auto p=target.substr(0,target.find('?'));auto args=params(target);
@@ -1255,13 +1291,23 @@ static Response handle(const App& app,const http::request<http::string_body>& re
  if(req.method()==http::verb::get&&p=="/api/v1/profiles")return respond(http::status::ok,v,morfo::profiles::registry_json());
 
  // Protected routes
- if(p=="/api/v1/images"||p=="/api/v1/export/manifest.csv"||p.starts_with("/api/v1/images/")||p.starts_with("/api/v1/analysis-regions/")||p.starts_with("/api/v1/analysis-runs/")){
+ if(p=="/api/v1/images"||p=="/api/v1/export/manifest.csv"||p.starts_with("/api/v1/images/")||p.starts_with("/api/v1/analysis-regions/")||p.starts_with("/api/v1/analysis-runs/")||p.starts_with("/api/v1/root-metrics/")||p.starts_with("/api/v1/calibrations/")){
   auto user=authenticate(app,req);
   if(!user){
    return problem(v,http::status::unauthorized,"Autenticação necessária. Acesse com seu e-mail institucional @embrapa.br.");
   }
   if(req.method()==http::verb::get&&p=="/api/v1/images")return respond(http::status::ok,v,all_images(app,user->id));
   if(req.method()==http::verb::get&&p=="/api/v1/export/manifest.csv")return respond(http::status::ok,v,manifest(app,user->id),"text/csv; charset=utf-8");
+  if(p.starts_with("/api/v1/root-metrics/")){
+   const std::string metric_id=p.substr(std::string("/api/v1/root-metrics/").size());if(!valid_id(metric_id))return problem(v,http::status::bad_request,"Invalid metric identifier");
+   try{if(req.method()==http::verb::get)return respond(http::status::ok,v,morfo_metric_run_json(app,metric_id,user->id));if(req.method()==http::verb::patch){if(req[http::field::content_type].find("application/json")!=0)return problem(v,http::status::unsupported_media_type,"Use application/json");return respond(http::status::ok,v,update_morfo_metric_run(app,metric_id,user->id,req.body()));}if(req.method()==http::verb::delete_)return respond(http::status::ok,v,delete_morfo_metric_run(app,metric_id,user->id));}
+   catch(const std::exception& e){return problem(v,std::string(e.what())=="Root metric run not found"?http::status::not_found:http::status::unprocessable_entity,e.what());}
+  }
+  if(p.starts_with("/api/v1/calibrations/")){
+   const std::string calibration_id=p.substr(std::string("/api/v1/calibrations/").size());if(!valid_id(calibration_id))return problem(v,http::status::bad_request,"Invalid calibration identifier");
+   try{if(req.method()==http::verb::patch){if(req[http::field::content_type].find("application/json")!=0)return problem(v,http::status::unsupported_media_type,"Use application/json");return respond(http::status::ok,v,update_image_calibration(app,calibration_id,user->id,req.body()));}if(req.method()==http::verb::delete_)return respond(http::status::ok,v,delete_image_calibration(app,calibration_id,user->id));}
+   catch(const std::exception& e){return problem(v,std::string(e.what())=="Calibration not found"?http::status::not_found:http::status::unprocessable_entity,e.what());}
+  }
   if(p.starts_with("/api/v1/analysis-runs/")){
    std::string rem=p.substr(std::string("/api/v1/analysis-runs/").size());
    auto slash=rem.find('/');
@@ -1317,11 +1363,19 @@ static Response handle(const App& app,const http::request<http::string_body>& re
     }
    }else{
     auto kind=rem.substr(slash+1);
+    if(kind=="calibrations"){
+     try{if(req.method()==http::verb::get)return respond(http::status::ok,v,image_calibrations_json(app,id,user->id));if(req.method()==http::verb::post){if(req[http::field::content_type].find("application/json")!=0)return problem(v,http::status::unsupported_media_type,"Use application/json");return respond(http::status::created,v,create_image_calibration(app,id,user->id,req.body()));}}
+     catch(const std::exception& e){return problem(v,std::string(e.what())=="Image not found"?http::status::not_found:http::status::unprocessable_entity,e.what());}
+    }
     if(kind=="profiles/roots-exp003"){
      try{
       if(req.method()==http::verb::post)return respond(http::status::created,v,morfo_start_profile(app,id,user->id));
       if(req.method()==http::verb::get)return respond(http::status::ok,v,morfo_profile_list(app,id,user->id));
      }catch(const std::exception& e){return problem(v,std::string(e.what())=="Image not found"?http::status::not_found:http::status::unprocessable_entity,e.what());}
+    }
+    if(kind.starts_with("profiles/roots-exp003/")&&kind.ends_with("/metrics/runs")){
+     const auto inner=kind.substr(std::string("profiles/roots-exp003/").size());const auto profile_run_id=inner.substr(0,inner.size()-std::string("/metrics/runs").size());if(!valid_id(profile_run_id))return problem(v,http::status::bad_request,"Invalid profile run identifier");
+     if(req.method()==http::verb::get)return respond(http::status::ok,v,morfo_metric_runs_json(app,id,profile_run_id,user->id));
     }
     if(kind.starts_with("profiles/roots-exp003/")&&(kind.ends_with("/metrics/export.csv")||kind.ends_with("/metrics/export.json"))){
      const bool csv=kind.ends_with("/export.csv");const std::string ending=csv?"/metrics/export.csv":"/metrics/export.json";
