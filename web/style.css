@@ -267,9 +267,12 @@
 
 /* Wide scientific workspace: preserve compact CRUD dialogs, expand only inspector. */
 #inspector{padding:12px}
-#inspector>.modal{width:min(1680px,calc(100vw - 24px));max-height:97vh}
+#inspector>.modal{position:relative;width:min(1840px,calc(100vw - 24px));height:min(1040px,calc(100vh - 24px));max-width:calc(100vw - 14px);max-height:calc(100vh - 14px)}
 #inspector .review-layout{grid-template-columns:minmax(0,2.25fr) minmax(430px,.95fr)}
 #inspector .image-stage{max-height:62vh}
 #inspector .analysis-panel{min-width:430px;max-width:560px}
+.inspector-resize-handle{position:absolute;right:0;bottom:0;width:24px;height:24px;z-index:20;cursor:nwse-resize;border-radius:12px 0 12px 0;background:linear-gradient(135deg,transparent 42%,#78a9b5 43% 51%,transparent 52% 61%,#087f8c 62% 70%,transparent 71%);touch-action:none}
+.inspector-resize-handle:hover,.inspector-resize-handle.dragging{background:linear-gradient(135deg,transparent 35%,#2ea8e8 36% 47%,transparent 48% 57%,#087f8c 58% 72%,transparent 73%)}
+body.resizing-inspector{cursor:nwse-resize;user-select:none}
 @media(max-width:1200px){#inspector .review-layout{grid-template-columns:minmax(0,1.65fr) minmax(360px,.85fr)}#inspector .analysis-panel{min-width:360px;max-width:none}}
-@media(max-width:900px){#inspector{padding:7px}#inspector>.modal{width:100%;max-height:98vh}#inspector .review-layout{grid-template-columns:1fr}#inspector .analysis-panel{min-width:0;max-width:none}}
+@media(max-width:900px){#inspector{padding:7px}#inspector>.modal{width:100%;height:auto;max-height:98vh}#inspector .review-layout{grid-template-columns:1fr}#inspector .analysis-panel{min-width:0;max-width:none}.inspector-resize-handle,#reset-inspector-size{display:none}}

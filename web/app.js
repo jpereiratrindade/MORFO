@@ -1813,6 +1813,43 @@ async function upload(e){
   }
 }
 
+// Resizable scientific workspace. Size is local UI preference, never scientific data.
+const inspectorModal = document.querySelector('#inspector > .modal');
+const inspectorResizeHandle = $('inspector-resize-handle');
+const inspectorSizeKey = 'morfo.inspector.size.v1';
+function inspectorLimits(){
+  return {minWidth:Math.min(900,window.innerWidth-14),minHeight:Math.min(600,window.innerHeight-14),maxWidth:window.innerWidth-14,maxHeight:window.innerHeight-14};
+}
+function setInspectorSize(width,height,persist=true){
+  if(window.innerWidth<=900)return;
+  const limits=inspectorLimits();
+  const w=Math.max(limits.minWidth,Math.min(limits.maxWidth,Math.round(width)));
+  const h=Math.max(limits.minHeight,Math.min(limits.maxHeight,Math.round(height)));
+  inspectorModal.style.width=`${w}px`;inspectorModal.style.height=`${h}px`;
+  if(persist)try{localStorage.setItem(inspectorSizeKey,JSON.stringify({width:w,height:h}));}catch(_error){}
+}
+function restoreInspectorSize(){
+  if(window.innerWidth<=900)return;
+  try{const saved=JSON.parse(localStorage.getItem(inspectorSizeKey)||'null');if(saved&&Number.isFinite(saved.width)&&Number.isFinite(saved.height))setInspectorSize(saved.width,saved.height,false);}catch(_error){}
+}
+function resetInspectorSize(){
+  try{localStorage.removeItem(inspectorSizeKey);}catch(_error){}
+  inspectorModal.style.removeProperty('width');inspectorModal.style.removeProperty('height');
+}
+let inspectorResize=null;
+inspectorResizeHandle.addEventListener('pointerdown',event=>{
+  if(window.innerWidth<=900)return;const bounds=inspectorModal.getBoundingClientRect();
+  inspectorResize={pointer:event.pointerId,x:event.clientX,y:event.clientY,width:bounds.width,height:bounds.height};
+  inspectorResizeHandle.setPointerCapture(event.pointerId);inspectorResizeHandle.classList.add('dragging');document.body.classList.add('resizing-inspector');event.preventDefault();
+});
+inspectorResizeHandle.addEventListener('pointermove',event=>{if(!inspectorResize||event.pointerId!==inspectorResize.pointer)return;setInspectorSize(inspectorResize.width+event.clientX-inspectorResize.x,inspectorResize.height+event.clientY-inspectorResize.y);});
+function stopInspectorResize(event){if(!inspectorResize||event.pointerId!==inspectorResize.pointer)return;inspectorResize=null;inspectorResizeHandle.classList.remove('dragging');document.body.classList.remove('resizing-inspector');}
+inspectorResizeHandle.addEventListener('pointerup',stopInspectorResize);inspectorResizeHandle.addEventListener('pointercancel',stopInspectorResize);
+inspectorResizeHandle.addEventListener('dblclick',()=>setInspectorSize(window.innerWidth-14,window.innerHeight-14));
+inspectorResizeHandle.addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key))return;const bounds=inspectorModal.getBoundingClientRect(),step=event.shiftKey?100:30;setInspectorSize(bounds.width+(event.key==='ArrowRight'?step:event.key==='ArrowLeft'?-step:0),bounds.height+(event.key==='ArrowDown'?step:event.key==='ArrowUp'?-step:0));event.preventDefault();});
+$('reset-inspector-size').addEventListener('click',resetInspectorSize);
+restoreInspectorSize();
+
 for(const b of document.querySelectorAll('[data-view]')) b.addEventListener('click', () => nav(b.dataset.view));
 $('hero-upload').onclick = () => nav('recebimento');
 $('refresh').onclick = refresh;
@@ -1879,7 +1916,10 @@ imageStage.addEventListener('keydown', e => {
   } else return;
   e.preventDefault();
 });
-window.addEventListener('resize', () => { if(!current) return; if(viewer.fit) fitViewer(); else renderViewer(); });
+window.addEventListener('resize', () => {
+  if(window.innerWidth>900&&inspectorModal.style.width)setInspectorSize(parseFloat(inspectorModal.style.width),parseFloat(inspectorModal.style.height),false);
+  if(!current)return;if(viewer.fit)fitViewer();else renderViewer();
+});
 
 $('menu').onclick = () => {
   const open = $('sidebar').classList.toggle('open');

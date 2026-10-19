@@ -150,6 +150,7 @@
       </div>
       <div class="head-right-group">
         <div class="image-actions-bar">
+          <button type="button" class="btn-subtle" id="reset-inspector-size" title="Restaurar tamanho automático da janela">↔ Restaurar tamanho</button>
           <button type="button" class="btn-subtle" id="btn-edit-image" title="Editar metadados da imagem">✏ Editar metadados</button>
           <button type="button" class="btn-subtle danger" id="btn-delete-image" title="Excluir imagem">🗑 Excluir imagem</button>
         </div>
@@ -224,6 +225,7 @@
     <div class="modal-foot">
       O MORFO distingue candidatos visuais de identificação biológica. O EXP-003 é experimental e não validado para medidas radiculares.
     </div>
+    <div id="inspector-resize-handle" class="inspector-resize-handle" role="separator" tabindex="0" aria-label="Redimensionar janela de análise" title="Arraste para redimensionar; use setas; clique duplo para maximizar"></div>
   </section>
 </div>
 <div id="image-edit-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="edit-img-title"><section class="modal sm-card"><div class="modal-head"><div><span class="section-kicker">CURADORIA CIENTÍFICA</span><h2 id="edit-img-title">Editar metadados da imagem</h2></div><button class="close" id="close-edit-image" type="button" aria-label="Fechar">×</button></div><form id="edit-image-form" class="edit-form"><div class="modal-body-pad"><label class="field-label"><span>Identificador da amostra <small>Opcional</small></span><input type="text" id="edit-sample-id" maxlength="64" placeholder="Ex.: P01-T2-2026"></label><label class="field-label"><span>Data de captura <small>Opcional</small></span><input type="date" id="edit-capture-date"></label><label class="field-label"><span>Nome do arquivo <small>Obrigatório</small></span><input type="text" id="edit-filename" maxlength="255" required></label></div><div class="modal-foot-actions"><button type="button" class="button outline" id="btn-cancel-edit-image">Cancelar</button><button type="submit" class="button primary" id="btn-save-edit-image">Salvar alterações</button></div></form></section></div>
