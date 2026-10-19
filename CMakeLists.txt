@@ -60,8 +60,22 @@ endif()
 add_executable(morfo-roots-golden tests/morfo_roots_golden.cpp)
 target_link_libraries(morfo-roots-golden PRIVATE morfo_roots_exp003)
 if(BUILD_TESTING)
- add_test(NAME morfo.roots.exp003.golden
-  COMMAND morfo-roots-golden
+ # Teste inteiramente sintetico, disponivel em qualquer clone do MORFO.
+ add_executable(morfo-roots-core-tests profiles/roots/exp003/tests/core_tests.cpp)
+ target_link_libraries(morfo-roots-core-tests PRIVATE morfo_roots_exp003)
+ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(morfo-roots-core-tests PRIVATE -UNDEBUG)
+ endif()
+ add_test(NAME morfo.roots.exp003.core COMMAND morfo-roots-core-tests)
+
+ # A imagem cientifica real e privada. Nao deve entrar no Git publico.
+ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/fixtures/private/monolito_rgb.png" AND
+    EXISTS "${CMAKE_SOURCE_DIR}/tests/fixtures/private/exp003_expected_mask.png")
+  add_test(NAME morfo.roots.exp003.golden
+   COMMAND morfo-roots-golden
     ${CMAKE_SOURCE_DIR}/tests/fixtures/private/monolito_rgb.png
     ${CMAKE_SOURCE_DIR}/tests/fixtures/private/exp003_expected_mask.png)
+ else()
+  message(STATUS "EXP-003 golden privado: nao registrado (fixtures ausentes)")
+ endif()
 endif()

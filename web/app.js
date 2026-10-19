@@ -366,33 +366,25 @@ async function initializeViewer(imageId){
 async function openInspect(id){
   current = images.find(x => x.id === id);
   if(!current) return;
+  // MORFO thematic workspace is authoritative; do not auto-run or load legacy classifiers.
   mode = 'original';
-  activeLayer = 'roots';
+  activeLayer = 'original';
   segCanvases = null;
   segCurrentRunId = null;
-  $('inspect-title').textContent = current.filename;
-  $('inspector').classList.remove('hidden');
-  document.body.style.overflow = 'hidden';
-  initializeViewer(current.id);
-  fillInspect();
   currentAnalysis = null;
   analysisRuns = [];
   selectedRegion = null;
-  renderAnalysis();
-  try{
-    const runs = await api(`/api/v1/images/${current.id}/analysis-runs`);
-    analysisRuns = runs.data || [];
-    const result = await api(`/api/v1/images/${current.id}/analysis`);
-    currentAnalysis = result.data;
-    selectedRegion = currentAnalysis?.regions?.[0] || null;
-    renderAnalysis();
-    fillInspect();
-    if(selectedRegion) {
-      loadHistory(selectedRegion.id);
-      renderSampleCrop(selectedRegion);
-    }
-    if(currentAnalysis) $('start-analysis').textContent = '↻ Re-analisar';
-  }catch(err){ toast(err.message); }
+  $('inspect-title').textContent = current.filename;
+  $('inspector').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  $('region-overlay').replaceChildren();
+  $('region-overlay').style.display = 'none';
+  $('segmented-layer').classList.add('hidden');
+  $('tile-layer').style.display = 'block';
+  $('inspect-image').style.display = 'block';
+  initializeViewer(current.id);
+  fillInspect();
+  window.dispatchEvent(new CustomEvent('morfo:image-opened', {detail:{imageId:current.id}}));
   $('close-inspect').focus();
 }
 
@@ -410,7 +402,7 @@ function fillInspect(){
     ['Tamanho', `${(current.bytes / 1024 / 1024).toFixed(2)} MiB`],
     ['Responsável', current.user_email || 'Não registrado'],
     ['Preparação', current.pipeline],
-    ['Estado científico', currentAnalysis ? 'REVISÃO NECESSÁRIA' : 'NÃO ANALISADA'],
+    ['Estado científico', 'RESULTADOS TEMÁTICOS NÃO VALIDADOS'],
     ['SHA-256', current.sha256],
     ['Arquivo Original', `<a href="/api/v1/images/${current.id}/original" download="${h(current.filename)}" class="open-link" style="display:inline-flex;align-items:center;gap:4px">Baixar arquivo original (${current.format.toUpperCase()}) ↗</a>`]
   ].map(([label, value], i) => `<div class="${i >= 9 ? 'hash' : ''}"><dt>${h(label)}</dt><dd>${value}</dd></div>`).join('');
@@ -1689,6 +1681,7 @@ async function saveReview(event, advanceNext = false){
 }
 
 function closeInspect(){
+  window.dispatchEvent(new CustomEvent('morfo:image-closed'));
   $('inspector').classList.add('hidden');
   closeEditImageModal();
   closeDeleteImageModal();
@@ -1939,4 +1932,6 @@ window.addEventListener('wheel', e => { if(e.ctrlKey) e.preventDefault(); }, { p
 
 
 // MORFO bridge is read-only; no exposure of credentials or private file paths.
-window.MORFO_Bridge = { activeImageId: () => current?.id ?? null };
+window.MORFO_Bridge = { activeImageId: () => current?.id ?? null, activeImageMeta: () => current ? { id:current.id, width:current.width, height:current.height, sha256:current.sha256 } : null };
+
+// MORFO-UX-002: legacy classifiers retained in code for historical regression, hidden from thematic workspace.

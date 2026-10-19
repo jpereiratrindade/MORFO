@@ -216,3 +216,50 @@
 
 
 
+
+/* MORFO-UX-002 — distinct thematic workbench, shares visual family of TRAMA/RIZOMA. */
+#inspector .modal-tools>.analysis-action-wrap,
+#inspector .modal-tools>.segmented,
+#inspector #layer-segmented-top {display:none!important}
+#inspector .modal-tools {min-height:43px;gap:9px;padding-top:6px;padding-bottom:6px}
+#inspector .morfo-thematic-workspace{padding:14px 17px 12px;background:#f3f8fb;border-bottom:1px solid #dce7ef;color:#18334b}
+.morfo-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.morfo-head h3{margin:1px 0 4px;color:#071e38;font-size:1.04rem}
+.morfo-head p{margin:0;color:#64788a;font-size:.76rem}
+.morfo-eyebrow{color:#087f8c!important;font-size:.61rem!important;font-weight:800!important;letter-spacing:.12em;margin:0 0 3px!important}
+.morfo-state{font-size:.6rem;background:#e9f4f3;color:#087f8c;padding:6px 9px;border:1px solid #cfebea;border-radius:14px;font-weight:800}
+.morfo-command-bar{display:grid;grid-template-columns:minmax(170px,1.05fr) auto minmax(170px,1fr);gap:10px;align-items:end;margin:12px 0}
+.morfo-command-bar label{display:grid;gap:5px;color:#435970;font-size:.67rem;font-weight:750}
+.morfo-command-bar select{display:block;width:100%;max-width:100%;border:1px solid #c8d8e3;background:white;border-radius:8px;padding:9px;color:#18334b;font:inherit;font-size:.72rem;height:39px}
+.morfo-command-bar .morfo-run{border:0;border-radius:8px;background:#087f8c;color:#fff;padding:9px 16px;height:39px;font-size:.75rem;font-weight:800;cursor:pointer}
+.morfo-command-bar .morfo-run:hover{background:#066a76}
+.morfo-command-bar button:disabled{opacity:.55;cursor:default}
+.morfo-layer-controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.morfo-layer-label{color:#64788a;font-weight:700;font-size:.68rem;margin-right:3px}
+.morfo-layer-controls button{border:1px solid #cbdce6;border-radius:7px;padding:7px 10px;background:white;color:#18334b;font-size:.72rem;cursor:pointer}
+.morfo-layer-controls button.active{background:#0c2844;color:#fff;border-color:#0c2844}
+.morfo-layer-controls button:disabled{opacity:.45;cursor:default}
+.morfo-opacity{display:flex;align-items:center;gap:6px;margin-left:auto;font-size:.68rem;color:#64788a}
+.morfo-opacity input{width:90px;accent-color:#087f8c}
+.morfo-opacity output{min-width:32px;font-variant-numeric:tabular-nums;color:#18334b}
+.morfo-status{margin-top:10px;font-size:.72rem;color:#51667a;min-height:1em}
+.morfo-status[data-level="error"]{color:#9a342d;font-weight:750}
+/* Intrinsic coords are identical: transform of analysis-canvas applies to the original and this layer together. */
+#analysis-canvas>.morfo-visual-layer{position:absolute;inset:0;display:block;width:100%;height:100%;max-width:none;max-height:none;object-fit:fill;pointer-events:none;image-rendering:auto;z-index:4;transition:none}
+#analysis-canvas>.morfo-visual-layer.hidden{display:none!important}
+#inspector .analysis-panel{min-width:0}
+.morfo-empty{padding:20px 14px;color:#64788a;font-size:.77rem;line-height:1.5}
+.morfo-result-info{padding:15px 13px 24px;color:#18334b}
+.morfo-result-info h3{margin:4px 0 10px;font-size:1.02rem}
+.morfo-validation{background:#fff4df;border-left:3px solid #d6a14c;padding:8px;border-radius:3px;color:#7a551d;font-size:.69rem;font-weight:800;line-height:1.3}
+.morfo-stat-list,.morfo-hashes{display:grid;grid-template-columns:minmax(90px,1fr) minmax(100px,1.2fr);row-gap:9px;column-gap:5px;margin:16px 0;font-size:.69rem}
+.morfo-stat-list dt,.morfo-hashes dt{color:#64788a;font-weight:700}
+.morfo-stat-list dd,.morfo-hashes dd{margin:0;font-weight:700;overflow-wrap:anywhere}
+.morfo-hashes{font-size:.61rem;border-top:1px solid #dce7ef;padding-top:11px}
+.morfo-artifacts{display:flex;flex-wrap:wrap;gap:6px}
+.morfo-artifacts a{color:#087f8c;background:#edf8f7;border:1px solid #cce9e7;border-radius:6px;padding:7px 9px;text-decoration:none;font-size:.68rem;font-weight:700}
+.morfo-method-note,.morfo-planned{font-size:.72rem;line-height:1.48;color:#64788a;margin:14px 0 0}
+.morfo-planned{border-top:1px solid #e2eaf0;padding-top:10px}
+@media(max-width:850px){.morfo-command-bar{grid-template-columns:1fr 1fr}.morfo-command-bar .morfo-run{order:3;grid-column:1/-1}.morfo-opacity{margin-left:0}}
+@media(max-width:550px){.morfo-command-bar{grid-template-columns:1fr}.morfo-command-bar .morfo-run{order:0;grid-column:auto}}
+
