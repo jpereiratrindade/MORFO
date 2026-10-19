@@ -18,9 +18,9 @@
 const $ = id => document.getElementById(id);
 const h = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const number = new Intl.NumberFormat('pt-BR');
-let images = [], selectedFiles = [], current = null, mode = 'original', currentUser = null, currentAnalysis = null, analysisRuns = [], selectedRegion = null;
+let images = [], selectedFiles = [], rootMetricRecords = [], current = null, mode = 'original', currentUser = null, currentAnalysis = null, analysisRuns = [], selectedRegion = null;
 let viewer = {imageId:null, manifest:null, scale:1, x:0, y:0, fit:true, drag:null, revision:0, frame:0};
-const viewNames = {acervo:'Acervo de imagens',recebimento:'Recebimento',integridade:'Integridade e origem',sobre:'Sobre o MORFO'};
+const viewNames = {acervo:'Acervo de imagens',recebimento:'Recebimento',analises:'Análises radiculares',integridade:'Integridade e origem',sobre:'Sobre o MORFO'};
 
 const STRATEGY_DESCRIPTIONS = {
   BAYESIAN_CALIBRATED: {
@@ -73,6 +73,7 @@ function nav(view){
   $('menu').setAttribute('aria-expanded', 'false');
   location.hash = view;
   window.scrollTo(0, 0);
+  if(view==='analises')loadRootMetricRecords();
 }
 
 async function api(path, options = {}){
@@ -211,6 +212,7 @@ async function logout(){
   currentUser = null;
   updateUserUI();
   images = [];
+  rootMetricRecords = [];
   render();
   showAuthOverlay('Sessão encerrada com segurança.');
   toast('Sessão encerrada.');
@@ -229,6 +231,26 @@ function render(){
   }
   $('gallery').innerHTML = items.map(x => `<button class="image-card" type="button" data-image="${h(x.id)}" aria-label="Inspecionar ${h(x.filename)}"><div class="thumb"><img src="/api/v1/images/${h(x.id)}/preview" alt="" loading="lazy"><span class="thumb-tag">${number.format(x.width)} × ${number.format(x.height)}</span></div><div class="cardbody"><strong title="${h(x.filename)}">${h(x.filename)}</strong><p>${h(x.sample_id || 'Sem amostra')} · ${h(x.capture_date || x.created_at.slice(0, 10))}</p><div class="card-foot"><span class="quality ${x.qc_state === 'REVIEW' ? '' : 'alert'}">${x.qc_state === 'REVIEW' ? 'Inspeção visual' : x.qc_state === 'LOW_LIGHT' ? 'Pouca luz' : 'Excesso de luz'}</span><span class="open-link">Abrir ↗</span></div></div></button>`).join('');
   for(const item of document.querySelectorAll('[data-image]')) item.onclick = () => openInspect(item.dataset.image);
+}
+
+function metricValue(value,unit,fallback='—'){
+  return value==null?fallback:`${Number(value).toLocaleString('pt-BR',{maximumFractionDigits:4})}${unit?` ${unit}`:''}`;
+}
+function renderRootMetricRecords(){
+  const target=$('root-analysis-list');if(!target)return;const search=$('root-analysis-search').value.trim().toLowerCase(),filter=$('root-analysis-filter').value;
+  const records=rootMetricRecords.filter(record=>(filter==='all'||record.status===filter)&&(!search||[record.filename,record.sample_id,record.id,record.profile_run_id,record.status].join(' ').toLowerCase().includes(search)));
+  if(!records.length){target.innerHTML=`<div class="empty"><h3>${rootMetricRecords.length?'Nenhuma análise corresponde aos filtros':'Nenhuma análise radicular registrada'}</h3><p>${rootMetricRecords.length?'Altere busca ou estado.':'Execute perfil EXP-003 em uma imagem; morfometria será registrada automaticamente.'}</p></div>`;return;}
+  target.innerHTML=records.map(record=>`<article class="root-analysis-card">
+    <header><div><span class="section-kicker">${h(record.sample_id||'SEM AMOSTRA')}</span><h3>${h(record.filename)}</h3><small>${h(record.created_at)} · ${h(record.id)}</small></div><span class="metric-status ${h(record.status.toLowerCase())}">${h(record.status)}</span></header>
+    <dl><div><dt>Área candidata</dt><dd>${record.projected_area_mm2==null?number.format(record.candidate_pixels)+' px²':metricValue(record.projected_area_mm2,'mm²')}</dd></div><div><dt>Comprimento</dt><dd>${record.projected_length_mm==null?metricValue(record.projected_length_px,'px'):metricValue(record.projected_length_mm,'mm')}</dd></div><div><dt>Diâmetro médio</dt><dd>${metricValue(record.mean_diameter,record.diameter_unit)}</dd></div><div><dt>Ocupação</dt><dd>${metricValue(record.occupancy_percent,'%')}</dd></div><div><dt>Pontas</dt><dd>${number.format(record.apparent_tips)}</dd></div><div><dt>Ramificações</dt><dd>${number.format(record.apparent_branches)}</dd></div></dl>
+    ${record.notes?`<p class="root-analysis-notes">${h(record.notes)}</p>`:''}
+    <footer><button type="button" class="button outline open-analysis-image" data-image="${h(record.image_id)}">Abrir classificação</button><a class="button outline" href="/api/v1/images/${encodeURIComponent(record.image_id)}/profiles/roots-exp003/${encodeURIComponent(record.profile_run_id)}/metrics/export.csv" download>CSV</a><a class="button outline" href="/api/v1/images/${encodeURIComponent(record.image_id)}/profiles/roots-exp003/${encodeURIComponent(record.profile_run_id)}/metrics/export.json" download>JSON</a></footer>
+  </article>`).join('');
+  target.querySelectorAll('.open-analysis-image').forEach(button=>button.addEventListener('click',()=>openInspect(button.dataset.image)));
+}
+async function loadRootMetricRecords(){
+  const target=$('root-analysis-list');if(!target||!currentUser)return;if(!rootMetricRecords.length)target.innerHTML='<div class="empty"><h3>Carregando análises…</h3></div>';
+  try{const response=await api('/api/v1/root-metrics');rootMetricRecords=Array.isArray(response.data)?response.data:[];renderRootMetricRecords();}catch(error){target.innerHTML=`<div class="empty"><h3>Falha ao carregar análises</h3><p>${h(error.message)}</p></div>`;}
 }
 
 async function refresh(){
@@ -1853,6 +1875,9 @@ restoreInspectorSize();
 for(const b of document.querySelectorAll('[data-view]')) b.addEventListener('click', () => nav(b.dataset.view));
 $('hero-upload').onclick = () => nav('recebimento');
 $('refresh').onclick = refresh;
+$('refresh-root-analyses').onclick = loadRootMetricRecords;
+$('root-analysis-search').oninput = renderRootMetricRecords;
+$('root-analysis-filter').onchange = renderRootMetricRecords;
 $('search').oninput = render;
 $('filter').onchange = render;
 $('upload-form').addEventListener('submit', upload);

@@ -1190,6 +1190,20 @@ static std::string morfo_metric_runs_json(const App& app,const std::string& imag
  return out<<"]}",out.str();
 }
 
+static std::string all_morfo_metric_runs_json(const App& app,const std::string& user_id){
+ Db db(app.root/"morfo.sqlite3");Stmt st(db.p,R"SQL(SELECT m.id,m.profile_run_id,m.image_id,i.filename,i.sample_id,m.metrics_version,m.status,m.notes,m.created_at,
+ json_extract(m.result_json,'$.data.projected_area_mm2'),json_extract(m.result_json,'$.data.candidate_pixels'),
+ json_extract(m.result_json,'$.data.projected_length_mm'),json_extract(m.result_json,'$.data.projected_length_px'),
+ json_extract(m.result_json,'$.data.mean_diameter'),json_extract(m.result_json,'$.data.diameter_unit'),
+ json_extract(m.result_json,'$.data.apparent_tips'),json_extract(m.result_json,'$.data.apparent_branches'),
+ json_extract(m.result_json,'$.data.occupancy_percent')
+ FROM morfo_root_metric_runs m JOIN images i ON i.id=m.image_id
+ WHERE m.user_id=? AND m.deleted_at IS NULL AND i.deleted_at IS NULL ORDER BY m.created_at DESC,m.rowid DESC)SQL");
+ st.bind(1,user_id);std::ostringstream out;out<<"{\"data\":[";bool first=true;auto nullable=[&](int column){return sqlite3_column_type(st.p,column)==SQLITE_NULL?std::string("null"):col(st.p,column);};
+ while(sqlite3_step(st.p)==SQLITE_ROW){if(!first)out<<',';first=false;out<<"{\"id\":"<<q(col(st.p,0))<<",\"profile_run_id\":"<<q(col(st.p,1))<<",\"image_id\":"<<q(col(st.p,2))<<",\"filename\":"<<q(col(st.p,3))<<",\"sample_id\":"<<q(col(st.p,4))<<",\"metrics_version\":"<<q(col(st.p,5))<<",\"status\":"<<q(col(st.p,6))<<",\"notes\":"<<q(col(st.p,7))<<",\"created_at\":"<<q(col(st.p,8))<<",\"projected_area_mm2\":"<<nullable(9)<<",\"candidate_pixels\":"<<sqlite3_column_int64(st.p,10)<<",\"projected_length_mm\":"<<nullable(11)<<",\"projected_length_px\":"<<nullable(12)<<",\"mean_diameter\":"<<nullable(13)<<",\"diameter_unit\":"<<q(col(st.p,14))<<",\"apparent_tips\":"<<sqlite3_column_int64(st.p,15)<<",\"apparent_branches\":"<<sqlite3_column_int64(st.p,16)<<",\"occupancy_percent\":"<<nullable(17)<<'}';}
+ return out<<"]}",out.str();
+}
+
 static std::string morfo_metric_run_json(const App& app,const std::string& metric_id,const std::string& user_id){
  Db db(app.root/"morfo.sqlite3");Stmt st(db.p,"SELECT result_json,status,notes FROM morfo_root_metric_runs WHERE id=? AND user_id=? AND deleted_at IS NULL");st.bind(1,metric_id);st.bind(2,user_id);
  if(sqlite3_step(st.p)!=SQLITE_ROW)throw Failure("Root metric run not found");
@@ -1334,13 +1348,14 @@ static Response handle(const App& app,const http::request<http::string_body>& re
  if(req.method()==http::verb::get&&p=="/api/v1/profiles")return respond(http::status::ok,v,morfo::profiles::registry_json());
 
  // Protected routes
- if(p=="/api/v1/images"||p=="/api/v1/export/manifest.csv"||p.starts_with("/api/v1/images/")||p.starts_with("/api/v1/analysis-regions/")||p.starts_with("/api/v1/analysis-runs/")||p.starts_with("/api/v1/root-metrics/")||p.starts_with("/api/v1/calibrations/")){
+ if(p=="/api/v1/images"||p=="/api/v1/root-metrics"||p=="/api/v1/export/manifest.csv"||p.starts_with("/api/v1/images/")||p.starts_with("/api/v1/analysis-regions/")||p.starts_with("/api/v1/analysis-runs/")||p.starts_with("/api/v1/root-metrics/")||p.starts_with("/api/v1/calibrations/")){
   auto user=authenticate(app,req);
   if(!user){
    return problem(v,http::status::unauthorized,"Autenticação necessária. Acesse com seu e-mail institucional @embrapa.br.");
   }
   if(req.method()==http::verb::get&&p=="/api/v1/images")return respond(http::status::ok,v,all_images(app,user->id));
   if(req.method()==http::verb::get&&p=="/api/v1/export/manifest.csv")return respond(http::status::ok,v,manifest(app,user->id),"text/csv; charset=utf-8");
+  if(req.method()==http::verb::get&&p=="/api/v1/root-metrics")return respond(http::status::ok,v,all_morfo_metric_runs_json(app,user->id));
   if(p.starts_with("/api/v1/root-metrics/")){
    const std::string metric_id=p.substr(std::string("/api/v1/root-metrics/").size());if(!valid_id(metric_id))return problem(v,http::status::bad_request,"Invalid metric identifier");
    try{if(req.method()==http::verb::get)return respond(http::status::ok,v,morfo_metric_run_json(app,metric_id,user->id));if(req.method()==http::verb::patch){if(req[http::field::content_type].find("application/json")!=0)return problem(v,http::status::unsupported_media_type,"Use application/json");return respond(http::status::ok,v,update_morfo_metric_run(app,metric_id,user->id,req.body()));}if(req.method()==http::verb::delete_)return respond(http::status::ok,v,delete_morfo_metric_run(app,metric_id,user->id));}
