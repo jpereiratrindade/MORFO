@@ -73,7 +73,7 @@ function nav(view){
   $('menu').setAttribute('aria-expanded', 'false');
   location.hash = view;
   window.scrollTo(0, 0);
-  if(view==='analises')loadRootMetricRecords();
+  if(view==='analises'){showRootAnalysisCatalog();loadRootMetricRecords();}
 }
 
 async function api(path, options = {}){
@@ -236,6 +236,49 @@ function render(){
 function metricValue(value,unit,fallback='—'){
   return value==null?fallback:`${Number(value).toLocaleString('pt-BR',{maximumFractionDigits:4})}${unit?` ${unit}`:''}`;
 }
+function showRootAnalysisCatalog(){
+  document.querySelector('.root-analysis-catalog')?.classList.remove('hidden');
+  $('root-analysis-detail')?.classList.add('hidden');
+}
+function rootMetricCell(label,value){return `<div><dt>${h(label)}</dt><dd>${value}</dd></div>`;}
+function rootMetricStatusLabel(status){return ({NOT_VALIDATED:'Não validado',REVIEWED:'Revisado',ARCHIVED:'Arquivado'})[status]||status;}
+async function openRootMetricDetail(metricId){
+  const detail=$('root-analysis-detail'),catalog=document.querySelector('.root-analysis-catalog');
+  if(!detail)return;
+  catalog?.classList.add('hidden');detail.classList.remove('hidden');detail.innerHTML='<div class="empty"><h3>Carregando registro…</h3></div>';window.scrollTo(0,0);
+  try{
+    const response=await api(`/api/v1/root-metrics/${encodeURIComponent(metricId)}`),metric=response.data||response;
+    const record=rootMetricRecords.find(item=>item.id===metricId)||{};
+    const unit=metric.diameter_unit||'px',components=Array.isArray(metric.components)?metric.components:[],classes=Array.isArray(metric.diameter_classes)?metric.diameter_classes:[];
+    detail.innerHTML=`
+      <div class="root-detail-head"><button class="button outline" id="root-detail-back" type="button">← Voltar às análises</button><div class="root-detail-actions"><a class="button outline" href="/api/v1/images/${encodeURIComponent(record.image_id||'')}/profiles/roots-exp003/${encodeURIComponent(record.profile_run_id||metric.profile_run_id||'')}/metrics/export.csv" download>↓ CSV</a><a class="button outline" href="/api/v1/images/${encodeURIComponent(record.image_id||'')}/profiles/roots-exp003/${encodeURIComponent(record.profile_run_id||metric.profile_run_id||'')}/metrics/export.json" download>↓ JSON</a></div></div>
+      <header class="root-detail-title"><div><span class="section-kicker">${h(record.sample_id||'SEM AMOSTRA')}</span><h2>${h(record.filename||'Análise radicular')}</h2><p>Registro ${h(metric.id||metricId)} · ${h(metric.created_at||record.created_at||'')}</p></div><span class="metric-status ${h((metric.record_status||record.status||'').toLowerCase())}">${h(rootMetricStatusLabel(metric.record_status||record.status||''))}</span></header>
+      <section class="root-detail-section"><h3>Resumo morfométrico</h3><dl class="root-detail-metrics">
+        ${rootMetricCell('Área candidata',metric.projected_area_mm2==null?metricValue(metric.candidate_pixels,'px²'):metricValue(metric.projected_area_mm2,'mm²'))}
+        ${rootMetricCell('Comprimento',metric.projected_length_mm==null?metricValue(metric.projected_length_px,'px'):metricValue(metric.projected_length_mm,'mm'))}
+        ${rootMetricCell('Diâmetro médio',metricValue(metric.mean_diameter,unit))}
+        ${rootMetricCell('Diâmetro mínimo',metricValue(metric.min_diameter,unit))}
+        ${rootMetricCell('Diâmetro máximo',metricValue(metric.max_diameter,unit))}
+        ${rootMetricCell('Ocupação',metricValue(metric.occupancy_percent,'%'))}
+        ${rootMetricCell('Pontas aparentes',metricValue(metric.apparent_tips,''))}
+        ${rootMetricCell('Pontas truncadas',metricValue(metric.truncated_tips,''))}
+        ${rootMetricCell('Ramificações aparentes',metricValue(metric.apparent_branches,''))}
+        ${rootMetricCell('Componentes',metricValue(components.length,''))}
+        ${rootMetricCell('Pixels de esqueleto',metricValue(metric.skeleton_pixels,'px'))}
+        ${rootMetricCell('Fração mensurável',metric.measurable_diameter_length_fraction==null?'—':metricValue(metric.measurable_diameter_length_fraction*100,'%'))}
+      </dl></section>
+      ${classes.length?`<section class="root-detail-section"><h3>Distribuição de diâmetros</h3><div class="root-detail-histogram">${classes.map(item=>`<div><span>${metricValue(item.lower_bound,unit)} – ${metricValue(item.upper_bound,unit)}</span><i style="--diameter-percent:${Math.max(0,Math.min(100,Number(item.percent)||0))}%"></i><b>${metricValue(item.percent,'%')}</b></div>`).join('')}</div></section>`:''}
+      <section class="root-detail-section"><h3>Componentes detectados</h3>${components.length?`<div class="root-detail-table"><table><thead><tr><th>ID</th><th>Área</th><th>Comprimento</th><th>Esqueleto</th><th>Centroide</th><th>Limites</th></tr></thead><tbody>${components.map(item=>`<tr><td>${h(item.id??item.component_id??'—')}</td><td>${item.area_mm2==null?metricValue(item.area_px,'px²'):metricValue(item.area_mm2,'mm²')}</td><td>${item.projected_length_mm==null?metricValue(item.projected_length_px,'px'):metricValue(item.projected_length_mm,'mm')}</td><td>${metricValue(item.skeleton_pixels,'px')}</td><td>${item.centroid_x_px==null?'—':`${metricValue(item.centroid_x_px,'')}, ${metricValue(item.centroid_y_px,'')}`}</td><td>${[item.touches_image_boundary&&'imagem',item.touches_roi_boundary&&'ROI',item.touches_abstained_area&&'abstenção'].filter(Boolean).join(', ')||'Não'}</td></tr>`).join('')}</tbody></table></div>`:'<p class="root-detail-muted">Nenhum componente registrado.</p>'}</section>
+      <div class="root-detail-columns"><section class="root-detail-section"><h3>Escala e proveniência</h3><dl class="root-detail-provenance"><dt>Escala X</dt><dd>${metricValue(metric.scale_x_mm_per_pixel,'mm/px')}</dd><dt>Escala Y</dt><dd>${metricValue(metric.scale_y_mm_per_pixel,'mm/px')}</dd><dt>Versão da métrica</dt><dd>${h(metric.metrics_version||record.metrics_version||'—')}</dd><dt>Execução do perfil</dt><dd>${h(metric.profile_run_id||record.profile_run_id||'—')}</dd><dt>Natureza</dt><dd>${h(metric.nature||'—')}</dd><dt>Estado científico</dt><dd>${h(metric.scientific_status||'—')}</dd></dl></section>
+      <section class="root-detail-section"><h3>Curadoria do registro</h3><form id="root-detail-form" class="root-detail-form"><label>Estado<select id="root-detail-status"><option value="NOT_VALIDATED">Não validado</option><option value="REVIEWED">Revisado</option><option value="ARCHIVED">Arquivado</option></select></label><label>Notas<textarea id="root-detail-notes" maxlength="2000" rows="5" placeholder="Observações da revisão">${h(metric.notes||'')}</textarea></label><div><button class="button primary" type="submit">Salvar alterações</button><button class="button danger" id="root-detail-delete" type="button">Excluir registro</button></div></form></section></div>
+      ${record.image_id?`<footer class="root-detail-source"><p>A imagem é mantida como fonte; este registro possui espaço próprio.</p><button class="button outline" id="root-detail-image" type="button">Abrir imagem de origem ↗</button></footer>`:''}`;
+    $('root-detail-status').value=metric.record_status||record.status||'NOT_VALIDATED';
+    $('root-detail-back').onclick=showRootAnalysisCatalog;
+    $('root-detail-form').onsubmit=async event=>{event.preventDefault();try{const updated=await api(`/api/v1/root-metrics/${encodeURIComponent(metricId)}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:$('root-detail-status').value,notes:$('root-detail-notes').value})});const item=rootMetricRecords.find(entry=>entry.id===metricId);if(item){item.status=updated.data.record_status;item.notes=updated.data.notes;}toast('Registro atualizado.');openRootMetricDetail(metricId);}catch(error){toast(error.message);}};
+    $('root-detail-delete').onclick=async()=>{if(!confirm('Excluir este registro de análise? A imagem de origem será preservada.'))return;try{await api(`/api/v1/root-metrics/${encodeURIComponent(metricId)}`,{method:'DELETE'});rootMetricRecords=rootMetricRecords.filter(item=>item.id!==metricId);renderRootMetricRecords();showRootAnalysisCatalog();toast('Registro de análise excluído.');}catch(error){toast(error.message);}};
+    if($('root-detail-image'))$('root-detail-image').onclick=()=>openInspect(record.image_id);
+  }catch(error){detail.innerHTML=`<button class="button outline" id="root-detail-back" type="button">← Voltar às análises</button><div class="empty"><h3>Falha ao carregar análise</h3><p>${h(error.message)}</p></div>`;$('root-detail-back').onclick=showRootAnalysisCatalog;}
+}
 function renderRootMetricRecords(){
   const target=$('root-analysis-list');if(!target)return;const search=$('root-analysis-search').value.trim().toLowerCase(),filter=$('root-analysis-filter').value;
   const records=rootMetricRecords.filter(record=>(filter==='all'||record.status===filter)&&(!search||[record.filename,record.sample_id,record.id,record.profile_run_id,record.status].join(' ').toLowerCase().includes(search)));
@@ -244,9 +287,9 @@ function renderRootMetricRecords(){
     <header><div><span class="section-kicker">${h(record.sample_id||'SEM AMOSTRA')}</span><h3>${h(record.filename)}</h3><small>${h(record.created_at)} · ${h(record.id)}</small></div><span class="metric-status ${h(record.status.toLowerCase())}">${h(record.status)}</span></header>
     <dl><div><dt>Área candidata</dt><dd>${record.projected_area_mm2==null?number.format(record.candidate_pixels)+' px²':metricValue(record.projected_area_mm2,'mm²')}</dd></div><div><dt>Comprimento</dt><dd>${record.projected_length_mm==null?metricValue(record.projected_length_px,'px'):metricValue(record.projected_length_mm,'mm')}</dd></div><div><dt>Diâmetro médio</dt><dd>${metricValue(record.mean_diameter,record.diameter_unit)}</dd></div><div><dt>Ocupação</dt><dd>${metricValue(record.occupancy_percent,'%')}</dd></div><div><dt>Pontas</dt><dd>${number.format(record.apparent_tips)}</dd></div><div><dt>Ramificações</dt><dd>${number.format(record.apparent_branches)}</dd></div></dl>
     ${record.notes?`<p class="root-analysis-notes">${h(record.notes)}</p>`:''}
-    <footer><button type="button" class="button outline open-analysis-image" data-image="${h(record.image_id)}">Abrir classificação</button><a class="button outline" href="/api/v1/images/${encodeURIComponent(record.image_id)}/profiles/roots-exp003/${encodeURIComponent(record.profile_run_id)}/metrics/export.csv" download>CSV</a><a class="button outline" href="/api/v1/images/${encodeURIComponent(record.image_id)}/profiles/roots-exp003/${encodeURIComponent(record.profile_run_id)}/metrics/export.json" download>JSON</a></footer>
+    <footer><button type="button" class="button primary open-analysis-record" data-metric="${h(record.id)}">Ver análise →</button><a class="button outline" href="/api/v1/images/${encodeURIComponent(record.image_id)}/profiles/roots-exp003/${encodeURIComponent(record.profile_run_id)}/metrics/export.csv" download>CSV</a><a class="button outline" href="/api/v1/images/${encodeURIComponent(record.image_id)}/profiles/roots-exp003/${encodeURIComponent(record.profile_run_id)}/metrics/export.json" download>JSON</a></footer>
   </article>`).join('');
-  target.querySelectorAll('.open-analysis-image').forEach(button=>button.addEventListener('click',()=>openInspect(button.dataset.image)));
+  target.querySelectorAll('.open-analysis-record').forEach(button=>button.addEventListener('click',()=>openRootMetricDetail(button.dataset.metric)));
 }
 async function loadRootMetricRecords(){
   const target=$('root-analysis-list');if(!target||!currentUser)return;if(!rootMetricRecords.length)target.innerHTML='<div class="empty"><h3>Carregando análises…</h3></div>';
