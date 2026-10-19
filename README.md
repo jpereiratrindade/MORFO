@@ -15,7 +15,7 @@ ctest --test-dir build --output-on-failure
 ./run.sh
 ```
 
-Acesse `http://127.0.0.1:8091`. Não alterar RIZOMA em produção. O perfil **Raízes · Matriz adaptativa EXP-003** cria resultados derivados com proveniência e status `NOT_VALIDATED`. Use `GET /api/v1/profiles` para identificar perfis existentes e planejados.
+O servidor escuta em `0.0.0.0:8091`. Neste computador, acesse `http://127.0.0.1:8091`; na rede local, use `http://IP-DO-COMPUTADOR:8091`. Para restringir ao próprio computador, execute `MORFO_HOST=127.0.0.1 ./run.sh`. Não alterar RIZOMA em produção. O perfil **Raízes · Matriz adaptativa EXP-003** cria resultados derivados com proveniência e status `NOT_VALIDATED`. Use `GET /api/v1/profiles` para identificar perfis existentes e planejados.
 
 ## Regressão do perfil raízes
 O teste `morfo.roots.exp003.golden` compara todos os pixels de uma máscara preservada com a execução nova do detector original; `850×757`, `3.339` pixels e `30` componentes. Dados de fixture ficam em `tests/fixtures/private/`, fora do Git por padrão.

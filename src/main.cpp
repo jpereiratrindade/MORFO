@@ -70,7 +70,7 @@ constexpr int TILE_SIZE=256;
 constexpr const char* PIPELINE="rizoma-exp004-progressive-0.4.0";
 struct Failure : std::runtime_error {using std::runtime_error::runtime_error;};
 struct Raster {int w=0,h=0;std::vector<unsigned char> rgba;};
-struct App {fs::path root,web; std::string host="127.0.0.1"; unsigned short port=8091; std::atomic<int>active{0};};
+struct App {fs::path root,web; std::string host="0.0.0.0"; unsigned short port=8091; std::atomic<int>active{0};};
 static std::string utc_offset(int seconds){auto t=std::time(nullptr)+seconds; std::tm v{};gmtime_r(&t,&v);char buf[32];std::strftime(buf,sizeof(buf),"%Y-%m-%dT%H:%M:%SZ",&v);return buf;}
 [[maybe_unused]] static std::string utc(){return utc_offset(0);}
 static std::string esc(std::string_view s){std::string out;out.reserve(s.size()+8);for(unsigned char c:s){switch(c){case '"':out+="\\\"";break;case '\\':out+="\\\\";break;case '\n':out+="\\n";break;case '\r':out+="\\r";break;case '\t':out+="\\t";break;default:if(c<32){char b[7];std::snprintf(b,sizeof(b),"\\u%04x",c);out+=b;}else out+=char(c);}}return out;}

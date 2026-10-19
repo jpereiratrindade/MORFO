@@ -7,7 +7,7 @@ Criar **MORFO v0.1.0** como novo repositório C++26 ao lado de RIZOMA, reutiliza
 - Destino padrão: mesma pasta `dev/cpp` de RIZOMA, diretório novo `MORFO`.
 - Instalação idempotente por recusa: **nunca sobrescrever** destino existente.
 - Não copiar `var/`, chaves, cookies, bancos, imagens de usuários ou builds do RIZOMA. Fixtures fornecidas pelo usuário são locais e ignoradas pelo Git.
-- Servidor MORFO: loopback `127.0.0.1:8091`; base `var/morfo.sqlite3`; cookie `morfo_session`.
+- Servidor MORFO: todas as interfaces `0.0.0.0:8091`; base `var/morfo.sqlite3`; cookie `morfo_session`.
 - Preservar licença GPLv3 e créditos do código herdado.
 
 ## Alcance v0.1.0

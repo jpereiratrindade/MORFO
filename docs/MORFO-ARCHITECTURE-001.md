@@ -29,7 +29,7 @@ Servidor MORFO C++26 (origem: RIZOMA)
 ```
 
 ## Implantação e isolamento
-- Por padrão, `127.0.0.1:8091`; não concorre com o RIZOMA (`8089`).
+- Por padrão, `0.0.0.0:8091`, acessível pela rede local quando permitido pelo firewall; não concorre com o RIZOMA (`8089`).
 - `var/`, banco e blobs separados; não importar dados privados do RIZOMA.
 - Cookie de sessão `morfo_session`, separado do cookie RIZOMA; modelo atual continua restrito a `@embrapa.br` por herança.
 - Esta entrega não prova segurança de operação Internet/multiusuário. Exigir HTTPS, backup/restauração, observabilidade, controle de quotas e testes de segurança adicionais antes de exposição.

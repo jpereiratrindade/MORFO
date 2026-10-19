@@ -19,4 +19,4 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
-exec ./build/morfo-server --host "${MORFO_HOST:-127.0.0.1}" --data-dir "${MORFO_DATA_DIR:-./var}" --web-dir ./web --port "${MORFO_PORT:-8091}" "$@"
+exec ./build/morfo-server --host "${MORFO_HOST:-0.0.0.0}" --data-dir "${MORFO_DATA_DIR:-./var}" --web-dir ./web --port "${MORFO_PORT:-8091}" "$@"

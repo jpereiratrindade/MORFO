@@ -106,7 +106,7 @@ content=sub_once(content,anchor,block+anchor,'protected profile routes')
 anchor='{"/app.js",{"app.js","application/javascript; charset=utf-8"}}'
 content=sub_once(content,anchor,anchor[:-1]+',{"/morfo-profiles.js",{"morfo-profiles.js","application/javascript; charset=utf-8"}}}', 'frontend asset')
 # Unique process identity (no change to legacy upload client contract for this first fork).
-content=content.replace('std::string host="127.0.0.1"; unsigned short port=8089','std::string host="127.0.0.1"; unsigned short port=8091')
+content=content.replace('std::string host="127.0.0.1"; unsigned short port=8089','std::string host="0.0.0.0"; unsigned short port=8091')
 content=content.replace('app.port=8089','app.port=8091')
 content=content.replace('RIZOMA v0.2.0','MORFO v0.1.0')
 
