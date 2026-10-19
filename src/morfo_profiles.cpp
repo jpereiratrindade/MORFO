@@ -24,6 +24,31 @@ void create_schema(sqlite3* db) {
   created_at TEXT NOT NULL
  );
  CREATE INDEX IF NOT EXISTS idx_morfo_profile_runs_image ON morfo_profile_runs(image_id,created_at);
+ CREATE TABLE IF NOT EXISTS morfo_root_metric_runs (
+  id TEXT PRIMARY KEY,
+  profile_run_id TEXT NOT NULL REFERENCES morfo_profile_runs(id),
+  image_id TEXT NOT NULL REFERENCES images(id),
+  user_id TEXT NOT NULL REFERENCES users(id),
+  metrics_version TEXT NOT NULL,
+  mask_sha256 TEXT NOT NULL,
+  calibration_json TEXT NOT NULL,
+  result_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+ );
+ CREATE INDEX IF NOT EXISTS idx_morfo_root_metric_runs_profile ON morfo_root_metric_runs(profile_run_id,created_at DESC);
+ CREATE TABLE IF NOT EXISTS morfo_root_metric_components (
+  metric_run_id TEXT NOT NULL REFERENCES morfo_root_metric_runs(id),
+  component_id INTEGER NOT NULL,
+  area_px INTEGER NOT NULL,
+  area_mm2 REAL,
+  centroid_x REAL NOT NULL,
+  centroid_y REAL NOT NULL,
+  min_x INTEGER NOT NULL,min_y INTEGER NOT NULL,max_x INTEGER NOT NULL,max_y INTEGER NOT NULL,
+  touches_image_boundary INTEGER NOT NULL,
+  touches_roi_boundary INTEGER NOT NULL,
+  touches_abstained_area INTEGER NOT NULL,
+  PRIMARY KEY(metric_run_id,component_id)
+ );
  )SQL";
  char* error=nullptr;
  if(sqlite3_exec(db,schema,nullptr,nullptr,&error)!=SQLITE_OK){

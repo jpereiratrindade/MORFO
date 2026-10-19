@@ -28,6 +28,7 @@
 #include "tiles.hpp"
 #include "learning.hpp"
 #include "morfo_profiles.hpp"
+#include "morfo_root_metrics.hpp"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -141,6 +142,14 @@ static int json_extract_int(const std::string& body,const std::string& key,int f
  auto colon=body.find(':',pos+pat.size());if(colon==std::string::npos)return fallback;
  auto start=body.find_first_of("-0123456789",colon+1);if(start==std::string::npos)return fallback;
  try{return std::stoi(body.substr(start));}catch(...){return fallback;}
+}
+static std::optional<double> json_extract_optional_double(const std::string& body,const std::string& key){
+ const std::string needle="\""+key+"\"";auto p=body.find(needle);if(p==std::string::npos)return std::nullopt;
+ p=body.find(':',p+needle.size());if(p==std::string::npos)throw Failure("Invalid JSON number");++p;
+ while(p<body.size()&&std::isspace(static_cast<unsigned char>(body[p])))++p;
+ if(body.compare(p,4,"null")==0)return std::nullopt;
+ std::size_t used=0;double value=0;try{value=std::stod(body.substr(p),&used);}catch(...){throw Failure("Invalid JSON number: "+key);}
+ if(used==0||!std::isfinite(value))throw Failure("Invalid JSON number: "+key);return value;
 }
 static bool send_email_code(const std::string& to_email,const std::string& code,std::string& err_out){
  const char* smtp_host_env=std::getenv("MORFO_SMTP_HOST");
@@ -1025,6 +1034,87 @@ static std::string morfo_profile_artifact(const App& app,const std::string& imag
  return slurp(app.root/col(st.p,0)/name);
 }
 
+static std::string metric_result_json(const morfo::root_metrics::Result& result,const std::string& id,const std::string& created_at){
+ auto optional_number=[](const std::optional<double>& value){if(!value)return std::string("null");std::ostringstream out;out<<std::setprecision(15)<<*value;return out.str();};
+ std::ostringstream out;
+ out<<"{\"data\":{\"id\":"<<q(id)<<",\"profile_run_id\":"<<q(result.mask_run_id)
+  <<",\"metrics_version\":"<<q(result.metrics_version)<<",\"scientific_status\":"<<q(result.status)
+  <<",\"nature\":"<<q(result.nature)<<",\"created_at\":"<<q(created_at)
+  <<",\"width\":"<<result.width<<",\"height\":"<<result.height
+  <<",\"roi_pixels\":"<<result.roi_pixels<<",\"valid_pixels\":"<<result.valid_pixels
+  <<",\"candidate_pixels\":"<<result.candidate_pixels<<",\"matrix_pixels\":"<<result.matrix_pixels
+  <<",\"excluded_or_abstained_pixels\":"<<result.excluded_or_abstained_pixels
+  <<",\"occupancy_percent\":"<<optional_number(result.occupancy_percent)
+  <<",\"projected_area_mm2\":"<<optional_number(result.projected_area_mm2)
+  <<",\"projected_area_cm2\":"<<optional_number(result.projected_area_cm2)
+  <<",\"scale_x_mm_per_pixel\":"<<optional_number(result.calibration.scale_x_mm_per_pixel)
+  <<",\"scale_y_mm_per_pixel\":"<<optional_number(result.calibration.scale_y_mm_per_pixel)
+  <<",\"components\":[";
+ bool first=true;for(const auto& component:result.components){if(!first)out<<',';first=false;
+  out<<"{\"id\":"<<component.id<<",\"area_px\":"<<component.area_px<<",\"area_mm2\":"<<optional_number(component.area_mm2)
+   <<",\"centroid_x_px\":"<<component.centroid_x_px<<",\"centroid_y_px\":"<<component.centroid_y_px
+   <<",\"bounding_box\":{\"min_x\":"<<component.bounding_box.min_x<<",\"min_y\":"<<component.bounding_box.min_y
+   <<",\"max_x\":"<<component.bounding_box.max_x<<",\"max_y\":"<<component.bounding_box.max_y<<'}'
+   <<",\"touches_image_boundary\":"<<(component.touches_image_boundary?"true":"false")
+   <<",\"touches_roi_boundary\":"<<(component.touches_roi_boundary?"true":"false")
+   <<",\"touches_abstained_area\":"<<(component.touches_abstained_area?"true":"false")<<'}';
+ }
+ return out<<"]}}",out.str();
+}
+
+static std::string morfo_start_metrics(const App& app,const std::string& image_id,const std::string& profile_run_id,const std::string& user_id,const std::string& body){
+ Db db(app.root/"morfo.sqlite3");
+ Stmt run(db.p,"SELECT relative_dir,mask_sha256,width,height,version FROM morfo_profile_runs WHERE id=? AND image_id=? AND user_id=? AND profile='roots-exp003'");
+ run.bind(1,profile_run_id);run.bind(2,image_id);run.bind(3,user_id);
+ if(sqlite3_step(run.p)!=SQLITE_ROW)throw Failure("Profile run not found");
+ const fs::path mask_path=app.root/col(run.p,0)/"mask.png";
+ const std::string mask_sha=col(run.p,1),profile_version=col(run.p,4);
+ const auto decoded=png_decode(slurp(mask_path));
+ morfo::root_metrics::Input input;
+ input.mask={static_cast<std::size_t>(decoded.w),static_cast<std::size_t>(decoded.h),{}};
+ input.mask.pixels.resize(static_cast<std::size_t>(decoded.w)*decoded.h);
+ for(std::size_t i=0;i<input.mask.pixels.size();++i)input.mask.pixels[i]=(decoded.rgba[i*4]!=0||decoded.rgba[i*4+1]!=0||decoded.rgba[i*4+2]!=0)?1:0;
+ input.roi={input.mask.width,input.mask.height,std::vector<std::uint8_t>(input.mask.pixels.size(),1)};
+ input.valid_mask=input.roi;
+ constexpr std::size_t border=10;
+ for(std::size_t y=0;y<input.mask.height;++y)for(std::size_t x=0;x<input.mask.width;++x)
+  if(x<border||y<border||x+border>=input.mask.width||y+border>=input.mask.height)input.valid_mask.pixels[y*input.mask.width+x]=0;
+ input.mask_run_id=profile_run_id;input.mask_sha256=mask_sha;input.profile_version=profile_version;
+ input.profile_parameters_json="{\"valid_border_px\":10,\"connectivity\":8}";
+ input.calibration.scale_x_mm_per_pixel=json_extract_optional_double(body,"scale_x");
+ input.calibration.scale_y_mm_per_pixel=json_extract_optional_double(body,"scale_y");
+ input.calibration.origin=json_extract_string(body,"origin");input.calibration.method=json_extract_string(body,"method");
+ input.calibration.date=json_extract_string(body,"date");input.calibration.version=json_extract_string(body,"version");
+ input.calibration.responsible=json_extract_string(body,"responsible");
+ const auto result=morfo::root_metrics::compute_gate_001a(input);
+ const std::string id=rand_id(),created=utc_offset(0);
+ const std::string response=metric_result_json(result,id,created);
+ std::ostringstream calibration;calibration<<"{\"scale_x\":"<<(input.calibration.scale_x_mm_per_pixel?std::to_string(*input.calibration.scale_x_mm_per_pixel):"null")
+  <<",\"scale_y\":"<<(input.calibration.scale_y_mm_per_pixel?std::to_string(*input.calibration.scale_y_mm_per_pixel):"null")<<",\"method\":"<<q(input.calibration.method)<<'}';
+ sql(db.p,"BEGIN IMMEDIATE");try{
+  Stmt insert(db.p,"INSERT INTO morfo_root_metric_runs(id,profile_run_id,image_id,user_id,metrics_version,mask_sha256,calibration_json,result_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)");
+  insert.bind(1,id);insert.bind(2,profile_run_id);insert.bind(3,image_id);insert.bind(4,user_id);insert.bind(5,result.metrics_version);insert.bind(6,mask_sha);insert.bind(7,calibration.str());insert.bind(8,response);insert.bind(9,created);
+  if(sqlite3_step(insert.p)!=SQLITE_DONE)throw Failure("Could not persist root metric run");
+  for(const auto& component:result.components){
+   Stmt item(db.p,"INSERT INTO morfo_root_metric_components(metric_run_id,component_id,area_px,area_mm2,centroid_x,centroid_y,min_x,min_y,max_x,max_y,touches_image_boundary,touches_roi_boundary,touches_abstained_area) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)");
+   item.bind(1,id);sqlite3_bind_int64(item.p,2,component.id);sqlite3_bind_int64(item.p,3,component.area_px);
+   if(component.area_mm2)sqlite3_bind_double(item.p,4,*component.area_mm2);else sqlite3_bind_null(item.p,4);
+   sqlite3_bind_double(item.p,5,component.centroid_x_px);sqlite3_bind_double(item.p,6,component.centroid_y_px);
+   sqlite3_bind_int64(item.p,7,component.bounding_box.min_x);sqlite3_bind_int64(item.p,8,component.bounding_box.min_y);sqlite3_bind_int64(item.p,9,component.bounding_box.max_x);sqlite3_bind_int64(item.p,10,component.bounding_box.max_y);
+   sqlite3_bind_int(item.p,11,component.touches_image_boundary);sqlite3_bind_int(item.p,12,component.touches_roi_boundary);sqlite3_bind_int(item.p,13,component.touches_abstained_area);
+   if(sqlite3_step(item.p)!=SQLITE_DONE)throw Failure("Could not persist root metric component");
+  }
+  sql(db.p,"COMMIT");
+ }catch(...){sqlite3_exec(db.p,"ROLLBACK",nullptr,nullptr,nullptr);throw;}
+ return response;
+}
+
+static std::string morfo_latest_metrics(const App& app,const std::string& image_id,const std::string& profile_run_id,const std::string& user_id){
+ Db db(app.root/"morfo.sqlite3");Stmt st(db.p,"SELECT result_json FROM morfo_root_metric_runs WHERE profile_run_id=? AND image_id=? AND user_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1");
+ st.bind(1,profile_run_id);st.bind(2,image_id);st.bind(3,user_id);
+ if(sqlite3_step(st.p)!=SQLITE_ROW)return "{\"data\":null}";return col(st.p,0);
+}
+
 static Response handle(const App& app,const http::request<http::string_body>& req){
  unsigned v=req.version();std::string target(req.target());auto p=target.substr(0,target.find('?'));auto args=params(target);
  if(req.method()==http::verb::get&&p=="/api/v1/health")return respond(http::status::ok,v,"{\"status\":\"ok\",\"name\":\"RIZOMA\",\"version\":\"0.2.0\",\"scope\":\"local-image-intake\"}");
@@ -1205,6 +1295,18 @@ static Response handle(const App& app,const http::request<http::string_body>& re
       if(req.method()==http::verb::post)return respond(http::status::created,v,morfo_start_profile(app,id,user->id));
       if(req.method()==http::verb::get)return respond(http::status::ok,v,morfo_profile_list(app,id,user->id));
      }catch(const std::exception& e){return problem(v,std::string(e.what())=="Image not found"?http::status::not_found:http::status::unprocessable_entity,e.what());}
+    }
+    if(kind.starts_with("profiles/roots-exp003/")&&kind.ends_with("/metrics")){
+     const auto inner=kind.substr(std::string("profiles/roots-exp003/").size());
+     const auto profile_run_id=inner.substr(0,inner.size()-std::string("/metrics").size());
+     if(!valid_id(profile_run_id))return problem(v,http::status::bad_request,"Invalid profile run identifier");
+     try{
+      if(req.method()==http::verb::post){
+       if(req[http::field::content_type].find("application/json")!=0)return problem(v,http::status::unsupported_media_type,"Use application/json");
+       return respond(http::status::created,v,morfo_start_metrics(app,id,profile_run_id,user->id,req.body()));
+      }
+      if(req.method()==http::verb::get)return respond(http::status::ok,v,morfo_latest_metrics(app,id,profile_run_id,user->id));
+     }catch(const std::exception& e){return problem(v,std::string(e.what())=="Profile run not found"?http::status::not_found:http::status::unprocessable_entity,e.what());}
     }
     if(kind.starts_with("profiles/roots-exp003/")&&req.method()==http::verb::get){
      try{std::string mime;auto bytes=morfo_profile_artifact(app,id,user->id,kind.substr(std::string("profiles/roots-exp003/").size()),mime);return respond(http::status::ok,v,std::move(bytes),mime);}

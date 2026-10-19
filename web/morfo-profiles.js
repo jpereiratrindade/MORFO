@@ -6,11 +6,12 @@
 
   const $ = id => document.getElementById(id);
   const number = new Intl.NumberFormat('pt-BR');
-  const state = { imageId:null, imageMeta:null, runs:[], run:null, report:null,
+  const state = { imageId:null, imageMeta:null, runs:[], run:null, report:null, metrics:null,
                   layer:'original', opacity:0.85, generation:0, busy:false, profileAvailable:true };
   const profile = 'roots-exp003';
   const rootPath = id => `/api/v1/images/${encodeURIComponent(id)}/profiles/${profile}`;
   const artifactPath = (id,run,kind) => `${rootPath(id)}/${encodeURIComponent(run)}/${kind}`;
+  const metricsPath = (id,run) => `${rootPath(id)}/${encodeURIComponent(run)}/metrics`;
   let workspace, layer, panel;
 
   function node(tag, props={}, children=[]) {
@@ -49,7 +50,7 @@
 
   function clearVisual() {
     if(layer){layer.removeAttribute('src');layer.classList.add('hidden');layer.style.opacity='1';}
-    state.run=null;state.report=null;state.layer='original';
+    state.run=null;state.report=null;state.metrics=null;state.layer='original';
     refreshLayers();
   }
 
@@ -84,10 +85,44 @@
       const a=node('a',{href:artifactPath(state.imageId,run.id,kind),text:label});
       a.target='_blank';a.rel='noopener';links.append(a);
     }
-    const note=node('p',{className:'morfo-method-note',text:'O EXP-003 não atribui identidade biológica. Não calcular comprimento, biomassa ou densidade de raízes a partir desta máscara sem validação e calibração.'});
+    const metrics=renderMetrics();
+    const note=node('p',{className:'morfo-method-note',text:'Morfometria descreve candidatos bidimensionais do EXP-003; não confirma identidade biológica. Comprimento e diâmetro ainda não pertencem ao Gate 001A.'});
     const planned=node('p',{className:'morfo-planned',text:'Revisão pixel a pixel e descoberta geral de categorias: planejadas, ainda indisponíveis.'});
-    wrap.append(eyebrow,title,status,dl,dl2,links,note,planned);
+    wrap.append(eyebrow,title,status,dl,dl2,links,metrics,note,planned);
     panel.replaceChildren(wrap);
+  }
+
+  function renderMetrics(){
+    const section=node('section',{className:'root-metrics'});
+    section.append(node('p',{className:'morfo-eyebrow',text:'RAÍZES → MORFOMETRIA'}),node('h3',{text:'Área e componentes · Gate 001A'}));
+    const form=node('form',{id:'root-metrics-form',className:'root-metrics-form'});
+    form.innerHTML=`<label>Escala X <span>mm/pixel</span><input id="metric-scale-x" type="number" min="0" step="any" placeholder="opcional"></label>
+      <label>Escala Y <span>mm/pixel</span><input id="metric-scale-y" type="number" min="0" step="any" placeholder="opcional"></label>
+      <button type="submit" class="morfo-run">Calcular morfometria</button>`;
+    form.addEventListener('submit',startMetrics);section.append(form);
+    const m=state.metrics;
+    if(!m){section.append(node('p',{className:'root-metrics-empty',text:'Nenhuma execução morfométrica para esta máscara.'}));return section;}
+    const stats=node('dl',{className:'root-metrics-stats'});
+    const fmt=(v,d=2)=>v==null?'Indisponível':Number(v).toLocaleString('pt-BR',{maximumFractionDigits:d});
+    const values=[['Área candidata',m.projected_area_mm2==null?`${number.format(m.candidate_pixels)} px²`:`${fmt(m.projected_area_mm2,4)} mm²`],
+      ['Ocupação',m.occupancy_percent==null?'Indisponível':`${fmt(m.occupancy_percent)}%`],['Componentes',number.format(m.components?.length||0)],
+      ['Pixels válidos',number.format(m.valid_pixels)],['Matriz',number.format(m.matrix_pixels)],['Excluídos/abstidos',number.format(m.excluded_or_abstained_pixels)]];
+    for(const [key,value] of values)stats.append(node('dt',{text:key}),node('dd',{text:value}));section.append(stats);
+    const table=node('div',{className:'root-metrics-table-wrap'});table.innerHTML='<table><thead><tr><th>ID</th><th>Área</th><th>Centroide</th><th>Limites</th></tr></thead><tbody></tbody></table>';
+    const tbody=table.querySelector('tbody');for(const c of (m.components||[]).slice(0,100)){
+      const tr=node('tr');for(const value of [c.id,`${number.format(c.area_px)} px²`,`${fmt(c.centroid_x_px,1)}, ${fmt(c.centroid_y_px,1)}`,`${c.bounding_box.min_x},${c.bounding_box.min_y}–${c.bounding_box.max_x},${c.bounding_box.max_y}`])tr.append(node('td',{text:String(value)}));tbody.append(tr);
+    }section.append(table);
+    section.append(node('p',{className:'root-metrics-provenance',text:`${m.scientific_status} · ${m.metrics_version} · ${m.id}`}));return section;
+  }
+
+  async function startMetrics(event){
+    event.preventDefault();if(!state.run||state.busy)return;
+    const x=$('metric-scale-x').value.trim(),y=$('metric-scale-y').value.trim();
+    if((x&&!y)||(!x&&y)){message('Informe ambas escalas X e Y, ou deixe ambas vazias.','error');return;}
+    const submitter=event.submitter;state.busy=true;if(submitter)submitter.disabled=true;message('Calculando área, ocupação e componentes na resolução original...');
+    try{const response=await json(metricsPath(state.imageId,state.run.id),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scale_x:x?Number(x):null,scale_y:y?Number(y):null,origin:x?'manual':'',method:x?'manual':'',date:new Date().toISOString(),version:'ui-001a'})});state.metrics=response.data;renderPanel();message('Morfometria Gate 001A calculada e persistida.');}
+    catch(error){message(`Falha na morfometria: ${error.message}`,'error');}
+    finally{state.busy=false;if(submitter&&submitter.isConnected)submitter.disabled=false;}
   }
 
   function refreshLayers() {
@@ -144,6 +179,9 @@
       const good=await readMask(id,report,imageId,epoch);
       if(!good)return;
       state.run=run;state.report=report;
+      const metricResponse=await json(metricsPath(imageId,id));
+      if(epoch!==state.generation||imageId!==state.imageId)return;
+      state.metrics=metricResponse.data;
       renderPanel();showLayer('overlay');
       message(`Execução ${id} carregada. Candidatos visuais; validação biológica pendente.`);
     }catch(error){
