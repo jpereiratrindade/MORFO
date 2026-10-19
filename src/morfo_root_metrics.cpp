@@ -39,6 +39,26 @@ bool active(const Input& input,std::size_t index){
  return input.mask.pixels[index]!=0&&input.roi.pixels[index]!=0&&input.valid_mask.pixels[index]!=0;
 }
 
+std::vector<std::uint8_t> guo_hall(std::vector<std::uint8_t> image,std::size_t width,std::size_t height){
+ if(width<3||height<3)return image;
+ bool changed=true;std::vector<std::size_t> remove;
+ auto at=[&](std::ptrdiff_t x,std::ptrdiff_t y){return image[static_cast<std::size_t>(y)*width+static_cast<std::size_t>(x)]!=0;};
+ while(changed){changed=false;
+  for(int pass=0;pass<2;++pass){remove.clear();
+   for(std::size_t y=1;y+1<height;++y)for(std::size_t x=1;x+1<width;++x){const auto index=y*width+x;if(image[index]==0)continue;
+    const bool p2=at(x,y-1),p3=at(x+1,y-1),p4=at(x+1,y),p5=at(x+1,y+1),p6=at(x,y+1),p7=at(x-1,y+1),p8=at(x-1,y),p9=at(x-1,y-1);
+    const int transitions=(!p2&&(p3||p4))+(!p4&&(p5||p6))+(!p6&&(p7||p8))+(!p8&&(p9||p2));
+    const int n1=(p9||p2)+(p3||p4)+(p5||p6)+(p7||p8),n2=(p2||p3)+(p4||p5)+(p6||p7)+(p8||p9);
+    const int neighbors_count=std::min(n1,n2);
+    const bool preserve=pass==0?((p6||p7||!p9)&&p8):((p2||p3||!p5)&&p4);
+    if(transitions==1&&neighbors_count>=2&&neighbors_count<=3&&!preserve)remove.push_back(index);
+   }
+   if(!remove.empty()){changed=true;for(const auto index:remove)image[index]=0;}
+  }
+ }
+ return image;
+}
+
 }
 
 Result compute_gate_001a(const Input& input){
@@ -118,6 +138,31 @@ Result compute_gate_001a(const Input& input){
   }
   result.components.push_back(component);
  }
+
+ std::vector<std::uint8_t> binary(total,0);for(std::size_t i=0;i<total;++i)binary[i]=active(input,i)?1:0;
+ const auto skeleton=guo_hall(std::move(binary),input.mask.width,input.mask.height);
+ std::vector<std::size_t> component_by_pixel(total,std::numeric_limits<std::size_t>::max());
+ for(std::size_t index=0;index<total;++index)if(skeleton[index]){
+  ++result.skeleton_pixels;
+  // Stable component assignment: bounding-box candidates are disambiguated by flood labels below.
+ }
+ std::vector<std::uint8_t> labeled(total,0);std::size_t component_index=0;
+ for(std::size_t seed=0;seed<total;++seed){if(labeled[seed]||!active(input,seed))continue;std::queue<std::size_t> pending;pending.push(seed);labeled[seed]=1;
+  while(!pending.empty()){const auto index=pending.front();pending.pop();if(skeleton[index])component_by_pixel[index]=component_index;const auto x=index%input.mask.width,y=index/input.mask.width;
+   for(const auto& [dx,dy]:neighbors){const auto nx=static_cast<std::ptrdiff_t>(x)+dx,ny=static_cast<std::ptrdiff_t>(y)+dy;if(nx<0||ny<0||nx>=static_cast<std::ptrdiff_t>(input.mask.width)||ny>=static_cast<std::ptrdiff_t>(input.mask.height))continue;const auto next=static_cast<std::size_t>(ny)*input.mask.width+static_cast<std::size_t>(nx);if(!labeled[next]&&active(input,next)){labeled[next]=1;pending.push(next);}}
+  }++component_index;
+ }
+ constexpr std::array<std::pair<int,int>,4> forward{{{1,0},{0,1},{1,1},{-1,1}}};
+ const double sx=input.calibration.scale_x_mm_per_pixel.value_or(1.0),sy=input.calibration.scale_y_mm_per_pixel.value_or(1.0);
+ for(std::size_t y=0;y<input.mask.height;++y)for(std::size_t x=0;x<input.mask.width;++x){const auto index=y*input.mask.width+x;if(!skeleton[index])continue;const auto owner=component_by_pixel[index];if(owner<result.components.size())++result.components[owner].skeleton_pixels;
+  for(const auto& [dx,dy]:forward){const auto nx=static_cast<std::ptrdiff_t>(x)+dx,ny=static_cast<std::ptrdiff_t>(y)+dy;if(nx<0||ny<0||nx>=static_cast<std::ptrdiff_t>(input.mask.width)||ny>=static_cast<std::ptrdiff_t>(input.mask.height))continue;const auto next=static_cast<std::size_t>(ny)*input.mask.width+static_cast<std::size_t>(nx);if(!skeleton[next])continue;
+   if(dx!=0&&dy!=0){const auto middle_x=y*input.mask.width+static_cast<std::size_t>(nx),middle_y=static_cast<std::size_t>(ny)*input.mask.width+x;if(skeleton[middle_x]||skeleton[middle_y])continue;}
+   const double px=std::hypot(static_cast<double>(dx),static_cast<double>(dy)),mm=std::hypot(dx*sx,dy*sy);++result.graph_edges;result.projected_length_px+=px;if(area_per_pixel)result.projected_length_mm=result.projected_length_mm.value_or(0.0)+mm;
+   if(owner<result.components.size()){auto& component=result.components[owner];++component.graph_edges;component.projected_length_px+=px;if(area_per_pixel)component.projected_length_mm=component.projected_length_mm.value_or(0.0)+mm;}
+  }
+ }
+ if(result.projected_length_mm)result.projected_length_cm=*result.projected_length_mm/10.0;
+ for(auto& component:result.components)if(component.projected_length_mm)component.projected_length_cm=*component.projected_length_mm/10.0;
  return result;
 }
 

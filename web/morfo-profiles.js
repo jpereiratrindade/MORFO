@@ -113,12 +113,14 @@
     const stats=node('dl',{className:'root-metrics-stats'});
     const fmt=(v,d=2)=>v==null?'Indisponível':Number(v).toLocaleString('pt-BR',{maximumFractionDigits:d});
     const values=[['Área candidata',m.projected_area_mm2==null?`${number.format(m.candidate_pixels)} px²`:`${fmt(m.projected_area_mm2,4)} mm²`],
+      ['Comprimento projetado',m.projected_length_mm==null?`${fmt(m.projected_length_px,3)} px`:`${fmt(m.projected_length_mm,4)} mm`],
       ['Ocupação',m.occupancy_percent==null?'Indisponível':`${fmt(m.occupancy_percent)}%`],['Componentes',number.format(m.components?.length||0)],
+      ['Pixels do esqueleto',number.format(m.skeleton_pixels||0)],['Arestas do grafo',number.format(m.graph_edges||0)],
       ['Pixels válidos',number.format(m.valid_pixels)],['Matriz',number.format(m.matrix_pixels)],['Excluídos/abstidos',number.format(m.excluded_or_abstained_pixels)]];
     for(const [key,value] of values)stats.append(node('dt',{text:key}),node('dd',{text:value}));section.append(stats);
-    const table=node('div',{className:'root-metrics-table-wrap'});table.innerHTML='<table><thead><tr><th>ID</th><th>Área</th><th>Centroide</th><th>Limites</th></tr></thead><tbody></tbody></table>';
+    const table=node('div',{className:'root-metrics-table-wrap'});table.innerHTML='<table><thead><tr><th>ID</th><th>Área</th><th>Comprimento</th><th>Centroide</th><th>Limites</th></tr></thead><tbody></tbody></table>';
     const tbody=table.querySelector('tbody');for(const c of (m.components||[]).slice(0,100)){
-      const tr=node('tr');for(const value of [c.id,`${number.format(c.area_px)} px²`,`${fmt(c.centroid_x_px,1)}, ${fmt(c.centroid_y_px,1)}`,`${c.bounding_box.min_x},${c.bounding_box.min_y}–${c.bounding_box.max_x},${c.bounding_box.max_y}`])tr.append(node('td',{text:String(value)}));tbody.append(tr);
+      const tr=node('tr');for(const value of [c.id,`${number.format(c.area_px)} px²`,c.projected_length_mm==null?`${fmt(c.projected_length_px,2)} px`:`${fmt(c.projected_length_mm,3)} mm`,`${fmt(c.centroid_x_px,1)}, ${fmt(c.centroid_y_px,1)}`,`${c.bounding_box.min_x},${c.bounding_box.min_y}–${c.bounding_box.max_x},${c.bounding_box.max_y}`])tr.append(node('td',{text:String(value)}));tbody.append(tr);
     }section.append(table);
     const exports=node('nav',{className:'root-metrics-exports','aria-label':'Exportar dados morfométricos'});
     for(const [format,label] of [['csv','Exportar CSV'],['json','Exportar JSON']])exports.append(node('a',{href:metricsExportPath(state.imageId,state.run.id,format),download:`morfo-morfometria-${state.run.id}.${format}`,text:label}));

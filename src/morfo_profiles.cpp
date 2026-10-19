@@ -50,6 +50,11 @@ void create_schema(sqlite3* db) {
   touches_image_boundary INTEGER NOT NULL,
   touches_roi_boundary INTEGER NOT NULL,
   touches_abstained_area INTEGER NOT NULL,
+  skeleton_pixels INTEGER NOT NULL DEFAULT 0,
+  graph_edges INTEGER NOT NULL DEFAULT 0,
+  projected_length_px REAL NOT NULL DEFAULT 0,
+  projected_length_mm REAL,
+  projected_length_cm REAL,
   PRIMARY KEY(metric_run_id,component_id)
  );
  CREATE TABLE IF NOT EXISTS morfo_image_calibrations (
@@ -86,6 +91,11 @@ void create_schema(sqlite3* db) {
   if(!has_column("morfo_root_metric_runs",column)){
    const std::string alter="ALTER TABLE morfo_root_metric_runs ADD COLUMN "+std::string(column)+" "+definition;
    if(sqlite3_exec(db,alter.c_str(),nullptr,nullptr,&error)!=SQLITE_OK){std::string message=error?error:"schema alter error";sqlite3_free(error);throw std::runtime_error("MORFO profile schema: "+message);}
+  }
+ for(const auto& [column,definition]:std::initializer_list<std::pair<const char*,const char*>>{{"skeleton_pixels","INTEGER NOT NULL DEFAULT 0"},{"graph_edges","INTEGER NOT NULL DEFAULT 0"},{"projected_length_px","REAL NOT NULL DEFAULT 0"},{"projected_length_mm","REAL"},{"projected_length_cm","REAL"}})
+  if(!has_column("morfo_root_metric_components",column)){
+   const std::string alter="ALTER TABLE morfo_root_metric_components ADD COLUMN "+std::string(column)+" "+definition;
+   if(sqlite3_exec(db,alter.c_str(),nullptr,nullptr,&error)!=SQLITE_OK){std::string message=error?error:"component schema alter error";sqlite3_free(error);throw std::runtime_error("MORFO profile schema: "+message);}
   }
 }
 std::string registry_json(){

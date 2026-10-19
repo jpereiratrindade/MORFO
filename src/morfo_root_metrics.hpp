@@ -8,7 +8,7 @@
 
 namespace morfo::root_metrics {
 
-inline constexpr const char* algorithm_version="morfo-root-metrics-001a-0.1.0";
+inline constexpr const char* algorithm_version="morfo-root-metrics-001b-0.2.0";
 inline constexpr const char* scientific_status="NOT_VALIDATED";
 inline constexpr const char* result_nature=
  "Morfometria bidimensional de candidatos radiculares detectados pelo EXP-003";
@@ -47,6 +47,11 @@ struct ComponentMetrics {
  bool touches_image_boundary=false;
  bool touches_roi_boundary=false;
  bool touches_abstained_area=false;
+ std::uint64_t skeleton_pixels=0;
+ std::uint64_t graph_edges=0;
+ double projected_length_px=0.0;
+ std::optional<double> projected_length_mm;
+ std::optional<double> projected_length_cm;
 };
 
 struct Input {
@@ -72,6 +77,11 @@ struct Result {
  std::optional<double> occupancy_percent;
  std::optional<double> projected_area_mm2;
  std::optional<double> projected_area_cm2;
+ std::uint64_t skeleton_pixels=0;
+ std::uint64_t graph_edges=0;
+ double projected_length_px=0.0;
+ std::optional<double> projected_length_mm;
+ std::optional<double> projected_length_cm;
  std::vector<ComponentMetrics> components;
  Calibration calibration;
  std::string mask_run_id;
@@ -84,7 +94,8 @@ struct Result {
  std::string nature=result_nature;
 };
 
-// Computes M01, M02 and M03. Non-zero raster values are treated as true.
+// Computes M01 through M04. M04 uses deterministic Guo-Hall thinning and an
+// 8-neighbor graph with redundant diagonals removed.
 // Throws std::invalid_argument for malformed dimensions or calibration.
 Result compute_gate_001a(const Input& input);
 

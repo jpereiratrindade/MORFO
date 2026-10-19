@@ -1048,6 +1048,10 @@ static std::string metric_result_json(const morfo::root_metrics::Result& result,
   <<",\"occupancy_percent\":"<<optional_number(result.occupancy_percent)
   <<",\"projected_area_mm2\":"<<optional_number(result.projected_area_mm2)
   <<",\"projected_area_cm2\":"<<optional_number(result.projected_area_cm2)
+  <<",\"skeleton_pixels\":"<<result.skeleton_pixels<<",\"graph_edges\":"<<result.graph_edges
+  <<",\"projected_length_px\":"<<result.projected_length_px
+  <<",\"projected_length_mm\":"<<optional_number(result.projected_length_mm)
+  <<",\"projected_length_cm\":"<<optional_number(result.projected_length_cm)
   <<",\"scale_x_mm_per_pixel\":"<<optional_number(result.calibration.scale_x_mm_per_pixel)
   <<",\"scale_y_mm_per_pixel\":"<<optional_number(result.calibration.scale_y_mm_per_pixel)
   <<",\"components\":[";
@@ -1058,7 +1062,11 @@ static std::string metric_result_json(const morfo::root_metrics::Result& result,
    <<",\"max_x\":"<<component.bounding_box.max_x<<",\"max_y\":"<<component.bounding_box.max_y<<'}'
    <<",\"touches_image_boundary\":"<<(component.touches_image_boundary?"true":"false")
    <<",\"touches_roi_boundary\":"<<(component.touches_roi_boundary?"true":"false")
-   <<",\"touches_abstained_area\":"<<(component.touches_abstained_area?"true":"false")<<'}';
+   <<",\"touches_abstained_area\":"<<(component.touches_abstained_area?"true":"false")
+   <<",\"skeleton_pixels\":"<<component.skeleton_pixels<<",\"graph_edges\":"<<component.graph_edges
+   <<",\"projected_length_px\":"<<component.projected_length_px
+   <<",\"projected_length_mm\":"<<optional_number(component.projected_length_mm)
+   <<",\"projected_length_cm\":"<<optional_number(component.projected_length_cm)<<'}';
  }
  return out<<"]}}",out.str();
 }
@@ -1097,12 +1105,15 @@ static std::string morfo_start_metrics(const App& app,const std::string& image_i
   insert.bind(1,id);insert.bind(2,profile_run_id);insert.bind(3,image_id);insert.bind(4,user_id);insert.bind(5,result.metrics_version);insert.bind(6,mask_sha);insert.bind(7,calibration.str());insert.bind(8,response);insert.bind(9,created);
   if(sqlite3_step(insert.p)!=SQLITE_DONE)throw Failure("Could not persist root metric run");
   for(const auto& component:result.components){
-   Stmt item(db.p,"INSERT INTO morfo_root_metric_components(metric_run_id,component_id,area_px,area_mm2,centroid_x,centroid_y,min_x,min_y,max_x,max_y,touches_image_boundary,touches_roi_boundary,touches_abstained_area) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)");
+   Stmt item(db.p,"INSERT INTO morfo_root_metric_components(metric_run_id,component_id,area_px,area_mm2,centroid_x,centroid_y,min_x,min_y,max_x,max_y,touches_image_boundary,touches_roi_boundary,touches_abstained_area,skeleton_pixels,graph_edges,projected_length_px,projected_length_mm,projected_length_cm) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
    item.bind(1,id);sqlite3_bind_int64(item.p,2,component.id);sqlite3_bind_int64(item.p,3,component.area_px);
    if(component.area_mm2)sqlite3_bind_double(item.p,4,*component.area_mm2);else sqlite3_bind_null(item.p,4);
    sqlite3_bind_double(item.p,5,component.centroid_x_px);sqlite3_bind_double(item.p,6,component.centroid_y_px);
    sqlite3_bind_int64(item.p,7,component.bounding_box.min_x);sqlite3_bind_int64(item.p,8,component.bounding_box.min_y);sqlite3_bind_int64(item.p,9,component.bounding_box.max_x);sqlite3_bind_int64(item.p,10,component.bounding_box.max_y);
    sqlite3_bind_int(item.p,11,component.touches_image_boundary);sqlite3_bind_int(item.p,12,component.touches_roi_boundary);sqlite3_bind_int(item.p,13,component.touches_abstained_area);
+   sqlite3_bind_int64(item.p,14,component.skeleton_pixels);sqlite3_bind_int64(item.p,15,component.graph_edges);sqlite3_bind_double(item.p,16,component.projected_length_px);
+   if(component.projected_length_mm)sqlite3_bind_double(item.p,17,*component.projected_length_mm);else sqlite3_bind_null(item.p,17);
+   if(component.projected_length_cm)sqlite3_bind_double(item.p,18,*component.projected_length_cm);else sqlite3_bind_null(item.p,18);
    if(sqlite3_step(item.p)!=SQLITE_DONE)throw Failure("Could not persist root metric component");
   }
   sql(db.p,"COMMIT");
@@ -1125,11 +1136,13 @@ static std::string morfo_metrics_csv(const App& app,const std::string& image_id,
   json_extract(result_json,'$.data.matrix_pixels'),json_extract(result_json,'$.data.excluded_or_abstained_pixels'),
   json_extract(result_json,'$.data.occupancy_percent'),json_extract(result_json,'$.data.projected_area_mm2'),
   json_extract(result_json,'$.data.projected_area_cm2'),json_extract(result_json,'$.data.scale_x_mm_per_pixel'),
-  json_extract(result_json,'$.data.scale_y_mm_per_pixel')
+  json_extract(result_json,'$.data.scale_y_mm_per_pixel'),json_extract(result_json,'$.data.skeleton_pixels'),
+  json_extract(result_json,'$.data.graph_edges'),json_extract(result_json,'$.data.projected_length_px'),
+  json_extract(result_json,'$.data.projected_length_mm'),json_extract(result_json,'$.data.projected_length_cm')
  FROM morfo_root_metric_runs WHERE profile_run_id=? AND image_id=? AND user_id=? AND deleted_at IS NULL ORDER BY created_at DESC,rowid DESC LIMIT 1)SQL");
  run.bind(1,profile_run_id);run.bind(2,image_id);run.bind(3,user_id);if(sqlite3_step(run.p)!=SQLITE_ROW)throw Failure("Root metric run not found");
  auto value=[&](int column){return sqlite3_column_type(run.p,column)==SQLITE_NULL?std::string(""):col(run.p,column);};
- std::ostringstream out;out<<"# MORFO-ROOT-METRICS-001A\r\n"
+ std::ostringstream out;out<<"# MORFO-ROOT-METRICS-001B\r\n"
   <<"# metric_run_id,"<<csv_cell(col(run.p,0))<<"\r\n# profile_run_id,"<<csv_cell(profile_run_id)
   <<"\r\n# image_id,"<<csv_cell(image_id)<<"\r\n# metrics_version,"<<csv_cell(col(run.p,1))
   <<"\r\n# mask_sha256,"<<csv_cell(col(run.p,2))<<"\r\n# created_at,"<<csv_cell(col(run.p,3))
@@ -1137,10 +1150,12 @@ static std::string morfo_metrics_csv(const App& app,const std::string& image_id,
   <<"\r\n# candidate_pixels,"<<value(6)<<"\r\n# valid_pixels,"<<value(7)<<"\r\n# matrix_pixels,"<<value(8)
   <<"\r\n# excluded_or_abstained_pixels,"<<value(9)<<"\r\n# occupancy_percent,"<<value(10)
   <<"\r\n# projected_area_mm2,"<<value(11)<<"\r\n# projected_area_cm2,"<<value(12)
-  <<"\r\n# scale_x_mm_per_pixel,"<<value(13)<<"\r\n# scale_y_mm_per_pixel,"<<value(14)<<"\r\n"
-  <<"component_id,area_px,area_mm2,centroid_x_px,centroid_y_px,min_x,min_y,max_x,max_y,touches_image_boundary,touches_roi_boundary,touches_abstained_area\r\n";
- Stmt components(db.p,"SELECT component_id,area_px,area_mm2,centroid_x,centroid_y,min_x,min_y,max_x,max_y,touches_image_boundary,touches_roi_boundary,touches_abstained_area FROM morfo_root_metric_components WHERE metric_run_id=? ORDER BY component_id");components.bind(1,col(run.p,0));
- while(sqlite3_step(components.p)==SQLITE_ROW){for(int column=0;column<12;++column){if(column)out<<',';if(sqlite3_column_type(components.p,column)!=SQLITE_NULL)out<<col(components.p,column);}out<<"\r\n";}
+  <<"\r\n# scale_x_mm_per_pixel,"<<value(13)<<"\r\n# scale_y_mm_per_pixel,"<<value(14)
+  <<"\r\n# skeleton_pixels,"<<value(15)<<"\r\n# graph_edges,"<<value(16)<<"\r\n# projected_length_px,"<<value(17)
+  <<"\r\n# projected_length_mm,"<<value(18)<<"\r\n# projected_length_cm,"<<value(19)<<"\r\n"
+  <<"component_id,area_px,area_mm2,centroid_x_px,centroid_y_px,min_x,min_y,max_x,max_y,touches_image_boundary,touches_roi_boundary,touches_abstained_area,skeleton_pixels,graph_edges,projected_length_px,projected_length_mm,projected_length_cm\r\n";
+ Stmt components(db.p,"SELECT component_id,area_px,area_mm2,centroid_x,centroid_y,min_x,min_y,max_x,max_y,touches_image_boundary,touches_roi_boundary,touches_abstained_area,skeleton_pixels,graph_edges,projected_length_px,projected_length_mm,projected_length_cm FROM morfo_root_metric_components WHERE metric_run_id=? ORDER BY component_id");components.bind(1,col(run.p,0));
+ while(sqlite3_step(components.p)==SQLITE_ROW){for(int column=0;column<17;++column){if(column)out<<',';if(sqlite3_column_type(components.p,column)!=SQLITE_NULL)out<<col(components.p,column);}out<<"\r\n";}
  return out.str();
 }
 

@@ -40,8 +40,9 @@ e, nos casos exercitados, soma das áreas dos componentes igual à área candida
 ## Limitações
 
 As medidas descrevem geometria da máscara candidata, não identidade biológica.
-O Gate 001A não calcula comprimento, esqueleto, diâmetro, topologia ou distribuição
-espacial; esses itens pertencem aos gates seguintes. A integração antecipada oferece
+O Gate 001A não calculava comprimento, esqueleto, diâmetro, topologia ou distribuição
+espacial. Comprimento e esqueleto foram adicionados pelo Gate 001B; demais itens
+pertencem aos gates seguintes. A integração antecipada oferece
 execução HTTP autenticada, persistência SQLite e consulta no painel para tornar os
 resultados de área, ocupação e componentes verificáveis pelo pesquisador.
 

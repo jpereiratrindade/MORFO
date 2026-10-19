@@ -91,4 +91,37 @@ int main(){
   threw=false;try{(void)compute_gate_001a(input);}catch(const std::invalid_argument&){threw=true;}
   assert(threw);
  }
+ {
+  auto input=basic(13,3);for(std::size_t x=1;x<=11;++x)set(input.mask,x,1);
+  const auto result=compute_gate_001a(input);
+  assert(result.skeleton_pixels==11&&result.graph_edges==10);
+  assert(close(result.projected_length_px,10.0));
+  assert(result.components[0].skeleton_pixels==11&&close(result.components[0].projected_length_px,10.0));
+ }
+ {
+  auto input=basic(3,13);for(std::size_t y=1;y<=11;++y)set(input.mask,1,y);
+  input.calibration.scale_x_mm_per_pixel=0.5;input.calibration.scale_y_mm_per_pixel=2.0;
+  const auto result=compute_gate_001a(input);
+  assert(close(result.projected_length_px,10.0));
+  assert(result.projected_length_mm&&close(*result.projected_length_mm,20.0));
+  assert(result.projected_length_cm&&close(*result.projected_length_cm,2.0));
+ }
+ {
+  auto input=basic(13,13);for(std::size_t i=1;i<=11;++i)set(input.mask,i,i);
+  const auto result=compute_gate_001a(input);
+  assert(result.graph_edges==10&&close(result.projected_length_px,10.0*std::sqrt(2.0)));
+ }
+ {
+  auto input=basic(7,7);for(std::size_t x=1;x<=5;++x){set(input.mask,x,3);set(input.mask,x,4);}
+  const auto result=compute_gate_001a(input);
+  // Orthogonal intermediate pixels suppress redundant diagonal graph edges.
+  assert(result.projected_length_px<=6.0);
+ }
+ {
+  auto input=basic(8,5);for(std::size_t x=0;x<8;++x)set(input.mask,x,2);
+  input.roi=raster(8,5,0);for(std::size_t y=0;y<5;++y)for(std::size_t x=2;x<=6;++x)set(input.roi,x,y);
+  const auto result=compute_gate_001a(input);
+  assert(result.candidate_pixels==5&&close(result.projected_length_px,4.0));
+  assert(result.components.size()==1&&result.components[0].touches_roi_boundary);
+ }
 }
