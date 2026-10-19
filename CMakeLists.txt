@@ -41,8 +41,12 @@ target_include_directories(morfo_roots_exp003 PUBLIC ${CMAKE_SOURCE_DIR}/profile
 target_link_libraries(morfo_roots_exp003 PUBLIC TIFF::TIFF PNG::PNG JPEG::JPEG OpenSSL::Crypto)
 target_compile_options(morfo_roots_exp003 PRIVATE -Wall -Wextra -Wpedantic)
 
+add_library(morfo_root_metrics STATIC src/morfo_root_metrics.cpp)
+target_include_directories(morfo_root_metrics PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_compile_options(morfo_root_metrics PRIVATE -Wall -Wextra -Wpedantic)
+
 add_executable(morfo-server src/main.cpp src/database.cpp src/analysis.cpp src/tiles.cpp src/learning.cpp src/morfo_profiles.cpp)
-target_link_libraries(morfo-server PRIVATE morfo_roots_exp003)
+target_link_libraries(morfo-server PRIVATE morfo_roots_exp003 morfo_root_metrics)
 target_include_directories(morfo-server PRIVATE ${BOOST_INCLUDE_DIR})
 target_link_libraries(morfo-server PRIVATE Threads::Threads OpenSSL::Crypto SQLite3::SQLite3 PNG::PNG JPEG::JPEG TIFF::TIFF)
 target_compile_definitions(morfo-server PRIVATE BOOST_ERROR_CODE_HEADER_ONLY BOOST_SYSTEM_NO_DEPRECATED)
@@ -60,6 +64,13 @@ endif()
 add_executable(morfo-roots-golden tests/morfo_roots_golden.cpp)
 target_link_libraries(morfo-roots-golden PRIVATE morfo_roots_exp003)
 if(BUILD_TESTING)
+ add_executable(morfo-root-metrics-001a-tests tests/morfo_root_metrics_001a.cpp)
+ target_link_libraries(morfo-root-metrics-001a-tests PRIVATE morfo_root_metrics)
+ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(morfo-root-metrics-001a-tests PRIVATE -UNDEBUG -Wall -Wextra -Wpedantic)
+ endif()
+ add_test(NAME morfo.root-metrics.001a COMMAND morfo-root-metrics-001a-tests)
+
  # Teste inteiramente sintetico, disponivel em qualquer clone do MORFO.
  add_executable(morfo-roots-core-tests profiles/roots/exp003/tests/core_tests.cpp)
  target_link_libraries(morfo-roots-core-tests PRIVATE morfo_roots_exp003)
