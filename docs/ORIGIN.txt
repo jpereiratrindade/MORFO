@@ -1,0 +1,4 @@
+origin_repo=RIZOMA
+origin_path=/run/media/jpereiratrindade/labeco10T/dev/cpp/RIZOMA
+origin_commit=c8810c9c1d1150fba43161dbf3127b39a3b5820f
+origin_worktree_snapshot=2026-10-19T17:40:45Z
