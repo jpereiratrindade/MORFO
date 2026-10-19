@@ -154,15 +154,29 @@ Result compute_gate_001a(const Input& input){
  }
  constexpr std::array<std::pair<int,int>,4> forward{{{1,0},{0,1},{1,1},{-1,1}}};
  const double sx=input.calibration.scale_x_mm_per_pixel.value_or(1.0),sy=input.calibration.scale_y_mm_per_pixel.value_or(1.0);
+ std::vector<std::uint8_t> degree(total,0);
+ auto edge_allowed=[&](std::size_t index,std::size_t next,int dx,int dy){
+  if(dx!=0&&dy!=0){const auto x=index%input.mask.width,y=index/input.mask.width,nx=next%input.mask.width,ny=next/input.mask.width;const auto middle_x=y*input.mask.width+nx,middle_y=ny*input.mask.width+x;if(skeleton[middle_x]||skeleton[middle_y])return false;}
+  return true;
+ };
  for(std::size_t y=0;y<input.mask.height;++y)for(std::size_t x=0;x<input.mask.width;++x){const auto index=y*input.mask.width+x;if(!skeleton[index])continue;const auto owner=component_by_pixel[index];if(owner<result.components.size())++result.components[owner].skeleton_pixels;
   for(const auto& [dx,dy]:forward){const auto nx=static_cast<std::ptrdiff_t>(x)+dx,ny=static_cast<std::ptrdiff_t>(y)+dy;if(nx<0||ny<0||nx>=static_cast<std::ptrdiff_t>(input.mask.width)||ny>=static_cast<std::ptrdiff_t>(input.mask.height))continue;const auto next=static_cast<std::size_t>(ny)*input.mask.width+static_cast<std::size_t>(nx);if(!skeleton[next])continue;
-   if(dx!=0&&dy!=0){const auto middle_x=y*input.mask.width+static_cast<std::size_t>(nx),middle_y=static_cast<std::size_t>(ny)*input.mask.width+x;if(skeleton[middle_x]||skeleton[middle_y])continue;}
+   if(!edge_allowed(index,next,dx,dy))continue;
    const double px=std::hypot(static_cast<double>(dx),static_cast<double>(dy)),mm=std::hypot(dx*sx,dy*sy);++result.graph_edges;result.projected_length_px+=px;if(area_per_pixel)result.projected_length_mm=result.projected_length_mm.value_or(0.0)+mm;
+   if(degree[index]<255)++degree[index];
+   if(degree[next]<255)++degree[next];
    if(owner<result.components.size()){auto& component=result.components[owner];++component.graph_edges;component.projected_length_px+=px;if(area_per_pixel)component.projected_length_mm=component.projected_length_mm.value_or(0.0)+mm;}
   }
  }
  if(result.projected_length_mm)result.projected_length_cm=*result.projected_length_mm/10.0;
  for(auto& component:result.components)if(component.projected_length_mm)component.projected_length_cm=*component.projected_length_mm/10.0;
+ for(std::size_t index=0;index<total;++index)if(skeleton[index]){const auto owner=component_by_pixel[index];if(degree[index]==1){++result.apparent_tips;if(owner<result.components.size()){++result.components[owner].apparent_tips;if(result.components[owner].touches_image_boundary||result.components[owner].touches_roi_boundary||result.components[owner].touches_abstained_area)++result.truncated_tips;}}else if(degree[index]==0){++result.isolated_skeleton_pixels;if(owner<result.components.size())++result.components[owner].isolated_skeleton_pixels;}}
+ std::vector<std::uint8_t> branch_seen(total,0);constexpr std::array<std::pair<int,int>,8> all_directions{{{-1,-1},{0,-1},{1,-1},{-1,0},{1,0},{-1,1},{0,1},{1,1}}};
+ for(std::size_t seed=0;seed<total;++seed){if(!skeleton[seed]||degree[seed]<3||branch_seen[seed])continue;std::queue<std::size_t> pending;std::vector<std::size_t> region;pending.push(seed);branch_seen[seed]=1;
+  while(!pending.empty()){const auto index=pending.front();pending.pop();region.push_back(index);const auto x=index%input.mask.width,y=index/input.mask.width;for(const auto& [dx,dy]:all_directions){const auto nx=static_cast<std::ptrdiff_t>(x)+dx,ny=static_cast<std::ptrdiff_t>(y)+dy;if(nx<0||ny<0||nx>=static_cast<std::ptrdiff_t>(input.mask.width)||ny>=static_cast<std::ptrdiff_t>(input.mask.height))continue;const auto next=static_cast<std::size_t>(ny)*input.mask.width+static_cast<std::size_t>(nx);if(skeleton[next]&&degree[next]>=3&&!branch_seen[next]&&edge_allowed(index,next,dx,dy)){branch_seen[next]=1;pending.push(next);}}}
+  std::uint64_t arms=0;for(const auto index:region){const auto x=index%input.mask.width,y=index/input.mask.width;for(const auto& [dx,dy]:all_directions){const auto nx=static_cast<std::ptrdiff_t>(x)+dx,ny=static_cast<std::ptrdiff_t>(y)+dy;if(nx<0||ny<0||nx>=static_cast<std::ptrdiff_t>(input.mask.width)||ny>=static_cast<std::ptrdiff_t>(input.mask.height))continue;const auto next=static_cast<std::size_t>(ny)*input.mask.width+static_cast<std::size_t>(nx);if(skeleton[next]&&degree[next]<3&&edge_allowed(index,next,dx,dy))++arms;}}
+  ++result.apparent_branches;result.branch_incident_arms.push_back(arms);const auto owner=component_by_pixel[seed];if(owner<result.components.size())++result.components[owner].apparent_branches;
+ }
  return result;
 }
 

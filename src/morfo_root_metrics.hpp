@@ -8,7 +8,7 @@
 
 namespace morfo::root_metrics {
 
-inline constexpr const char* algorithm_version="morfo-root-metrics-001b-0.2.0";
+inline constexpr const char* algorithm_version="morfo-root-metrics-001c-topology-0.3.0";
 inline constexpr const char* scientific_status="NOT_VALIDATED";
 inline constexpr const char* result_nature=
  "Morfometria bidimensional de candidatos radiculares detectados pelo EXP-003";
@@ -52,6 +52,9 @@ struct ComponentMetrics {
  double projected_length_px=0.0;
  std::optional<double> projected_length_mm;
  std::optional<double> projected_length_cm;
+ std::uint64_t apparent_tips=0;
+ std::uint64_t isolated_skeleton_pixels=0;
+ std::uint64_t apparent_branches=0;
 };
 
 struct Input {
@@ -82,6 +85,11 @@ struct Result {
  double projected_length_px=0.0;
  std::optional<double> projected_length_mm;
  std::optional<double> projected_length_cm;
+ std::uint64_t apparent_tips=0;
+ std::uint64_t truncated_tips=0;
+ std::uint64_t isolated_skeleton_pixels=0;
+ std::uint64_t apparent_branches=0;
+ std::vector<std::uint64_t> branch_incident_arms;
  std::vector<ComponentMetrics> components;
  Calibration calibration;
  std::string mask_run_id;

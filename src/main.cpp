@@ -1052,7 +1052,11 @@ static std::string metric_result_json(const morfo::root_metrics::Result& result,
   <<",\"projected_length_px\":"<<result.projected_length_px
   <<",\"projected_length_mm\":"<<optional_number(result.projected_length_mm)
   <<",\"projected_length_cm\":"<<optional_number(result.projected_length_cm)
-  <<",\"scale_x_mm_per_pixel\":"<<optional_number(result.calibration.scale_x_mm_per_pixel)
+  <<",\"apparent_tips\":"<<result.apparent_tips<<",\"truncated_tips\":"<<result.truncated_tips
+  <<",\"isolated_skeleton_pixels\":"<<result.isolated_skeleton_pixels<<",\"apparent_branches\":"<<result.apparent_branches
+  <<",\"branch_incident_arms\":[";
+ for(std::size_t index=0;index<result.branch_incident_arms.size();++index){if(index)out<<',';out<<result.branch_incident_arms[index];}
+ out<<"],\"scale_x_mm_per_pixel\":"<<optional_number(result.calibration.scale_x_mm_per_pixel)
   <<",\"scale_y_mm_per_pixel\":"<<optional_number(result.calibration.scale_y_mm_per_pixel)
   <<",\"components\":[";
  bool first=true;for(const auto& component:result.components){if(!first)out<<',';first=false;
@@ -1066,7 +1070,9 @@ static std::string metric_result_json(const morfo::root_metrics::Result& result,
    <<",\"skeleton_pixels\":"<<component.skeleton_pixels<<",\"graph_edges\":"<<component.graph_edges
    <<",\"projected_length_px\":"<<component.projected_length_px
    <<",\"projected_length_mm\":"<<optional_number(component.projected_length_mm)
-   <<",\"projected_length_cm\":"<<optional_number(component.projected_length_cm)<<'}';
+   <<",\"projected_length_cm\":"<<optional_number(component.projected_length_cm)
+   <<",\"apparent_tips\":"<<component.apparent_tips<<",\"isolated_skeleton_pixels\":"<<component.isolated_skeleton_pixels
+   <<",\"apparent_branches\":"<<component.apparent_branches<<'}';
  }
  return out<<"]}}",out.str();
 }
@@ -1105,7 +1111,7 @@ static std::string morfo_start_metrics(const App& app,const std::string& image_i
   insert.bind(1,id);insert.bind(2,profile_run_id);insert.bind(3,image_id);insert.bind(4,user_id);insert.bind(5,result.metrics_version);insert.bind(6,mask_sha);insert.bind(7,calibration.str());insert.bind(8,response);insert.bind(9,created);
   if(sqlite3_step(insert.p)!=SQLITE_DONE)throw Failure("Could not persist root metric run");
   for(const auto& component:result.components){
-   Stmt item(db.p,"INSERT INTO morfo_root_metric_components(metric_run_id,component_id,area_px,area_mm2,centroid_x,centroid_y,min_x,min_y,max_x,max_y,touches_image_boundary,touches_roi_boundary,touches_abstained_area,skeleton_pixels,graph_edges,projected_length_px,projected_length_mm,projected_length_cm) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+   Stmt item(db.p,"INSERT INTO morfo_root_metric_components(metric_run_id,component_id,area_px,area_mm2,centroid_x,centroid_y,min_x,min_y,max_x,max_y,touches_image_boundary,touches_roi_boundary,touches_abstained_area,skeleton_pixels,graph_edges,projected_length_px,projected_length_mm,projected_length_cm,apparent_tips,isolated_skeleton_pixels,apparent_branches) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
    item.bind(1,id);sqlite3_bind_int64(item.p,2,component.id);sqlite3_bind_int64(item.p,3,component.area_px);
    if(component.area_mm2)sqlite3_bind_double(item.p,4,*component.area_mm2);else sqlite3_bind_null(item.p,4);
    sqlite3_bind_double(item.p,5,component.centroid_x_px);sqlite3_bind_double(item.p,6,component.centroid_y_px);
@@ -1114,6 +1120,7 @@ static std::string morfo_start_metrics(const App& app,const std::string& image_i
    sqlite3_bind_int64(item.p,14,component.skeleton_pixels);sqlite3_bind_int64(item.p,15,component.graph_edges);sqlite3_bind_double(item.p,16,component.projected_length_px);
    if(component.projected_length_mm)sqlite3_bind_double(item.p,17,*component.projected_length_mm);else sqlite3_bind_null(item.p,17);
    if(component.projected_length_cm)sqlite3_bind_double(item.p,18,*component.projected_length_cm);else sqlite3_bind_null(item.p,18);
+   sqlite3_bind_int64(item.p,19,component.apparent_tips);sqlite3_bind_int64(item.p,20,component.isolated_skeleton_pixels);sqlite3_bind_int64(item.p,21,component.apparent_branches);
    if(sqlite3_step(item.p)!=SQLITE_DONE)throw Failure("Could not persist root metric component");
   }
   sql(db.p,"COMMIT");

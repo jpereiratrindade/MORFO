@@ -96,7 +96,7 @@
 
   function renderMetrics(){
     const section=node('section',{className:'root-metrics'});
-    section.append(node('p',{className:'morfo-eyebrow',text:'RAÍZES → MORFOMETRIA'}),node('h3',{text:'Área, componentes e comprimento · Gate 001B'}));
+    section.append(node('p',{className:'morfo-eyebrow',text:'RAÍZES → MORFOMETRIA'}),node('h3',{text:'Área, comprimento e topologia · Gate 001C'}));
     const form=node('form',{id:'root-metrics-form',className:'root-metrics-form'});
     form.innerHTML=`<label>Escala X <span>mm/pixel</span><input id="metric-scale-x" type="number" min="0" step="any" placeholder="opcional"></label>
       <label>Escala Y <span>mm/pixel</span><input id="metric-scale-y" type="number" min="0" step="any" placeholder="opcional"></label>
@@ -116,6 +116,8 @@
       ['Comprimento projetado',m.projected_length_mm==null?`${fmt(m.projected_length_px,3)} px`:`${fmt(m.projected_length_mm,4)} mm`],
       ['Ocupação',m.occupancy_percent==null?'Indisponível':`${fmt(m.occupancy_percent)}%`],['Componentes',number.format(m.components?.length||0)],
       ['Pixels do esqueleto',number.format(m.skeleton_pixels||0)],['Arestas do grafo',number.format(m.graph_edges||0)],
+      ['Pontas aparentes',number.format(m.apparent_tips||0)],['Ramificações aparentes',number.format(m.apparent_branches||0)],
+      ['Pixels isolados',number.format(m.isolated_skeleton_pixels||0)],['Pontas truncadas',number.format(m.truncated_tips||0)],
       ['Pixels válidos',number.format(m.valid_pixels)],['Matriz',number.format(m.matrix_pixels)],['Excluídos/abstidos',number.format(m.excluded_or_abstained_pixels)]];
     for(const [key,value] of values)stats.append(node('dt',{text:key}),node('dd',{text:value}));section.append(stats);
     const table=node('div',{className:'root-metrics-table-wrap'});table.innerHTML='<table><thead><tr><th>ID</th><th>Área</th><th>Comprimento</th><th>Centroide</th><th>Limites</th></tr></thead><tbody></tbody></table>';

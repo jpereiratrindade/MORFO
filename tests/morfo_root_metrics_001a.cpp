@@ -124,4 +124,21 @@ int main(){
   assert(result.candidate_pixels==5&&close(result.projected_length_px,4.0));
   assert(result.components.size()==1&&result.components[0].touches_roi_boundary);
  }
+ {
+  auto input=basic(7,8);for(std::size_t x=1;x<=5;++x)set(input.mask,x,2);for(std::size_t y=2;y<=6;++y)set(input.mask,3,y);
+  const auto result=compute_gate_001a(input);
+  assert(result.apparent_tips==3);
+  assert(result.apparent_branches==1);
+  assert(result.branch_incident_arms.size()==1&&result.branch_incident_arms[0]==3);
+ }
+ {
+  auto input=basic(5,5);set(input.mask,2,2);
+  const auto result=compute_gate_001a(input);
+  assert(result.isolated_skeleton_pixels==1&&result.apparent_tips==0&&result.apparent_branches==0);
+ }
+ {
+  auto input=basic(7,7);for(std::size_t x=2;x<=4;++x){set(input.mask,x,2);set(input.mask,x,4);}set(input.mask,2,3);set(input.mask,4,3);
+  const auto result=compute_gate_001a(input);
+  assert(result.apparent_tips==0);
+ }
 }
