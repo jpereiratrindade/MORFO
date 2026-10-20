@@ -89,53 +89,53 @@
     </div>
    </div>
    <span class="auth-badge">ACESSO RESTRITO</span>
-   <h1 id="auth-title" class="auth-title">Registro &amp; Acesso Institucional</h1>
-   <p class="auth-desc">Identifique-se com seu e-mail institucional Embrapa para receber sua chave temporária de acesso ao acervo e à ingestão de imagens.</p>
-   <div class="auth-domain-tag">Somente e-mails <strong>@embrapa.br</strong> são permitidos</div>
+   <h1 id="auth-title" class="auth-title">Acesso por Código de Verificação</h1>
+   <p class="auth-desc">Informe seu e-mail cadastrado para receber um código numérico temporário enviado via SMTP pelo LABECO.</p>
+   <div class="auth-domain-tag">Acesso exclusivo para usuários autorizados</div>
   </div>
 
   <div class="auth-body">
    <!-- Etapa 1: Inserir E-mail -->
    <form id="auth-email-form" class="auth-form" novalidate>
     <label class="auth-label" for="auth-email-input">
-     <span>E-mail institucional (@embrapa.br)</span>
+     <span>E-mail cadastrado</span>
      <div class="auth-input-wrap">
       <span class="auth-icon" aria-hidden="true">✉</span>
-      <input type="email" id="auth-email-input" placeholder="nome.sobrenome@embrapa.br" required autocomplete="email" autofocus>
+      <input type="email" id="auth-email-input" placeholder="seu.email@dominio.com" required autocomplete="email" autofocus>
      </div>
-     <small class="auth-hint">Uma chave de acesso de 6 dígitos será enviada para o endereço informado.</small>
+     <small class="auth-hint">O código de uso único (6 dígitos, 10 min, máx. 5 tentativas) será enviado para seu e-mail.</small>
     </label>
     <button type="submit" class="button primary full auth-submit" id="btn-request-code">
-     Solicitar chave por e-mail <span aria-hidden="true">→</span>
+     Enviar código por e-mail <span aria-hidden="true">→</span>
     </button>
    </form>
 
    <!-- Etapa 2: Validar Código de 6 dígitos -->
    <form id="auth-code-form" class="auth-form hidden" novalidate>
     <div class="auth-sent-banner">
-     <span>Chave enviada para:</span>
-     <strong id="auth-target-email">usuario@embrapa.br</strong>
+     <span>Código enviado para:</span>
+     <strong id="auth-target-email">usuario@dominio.com</strong>
     </div>
     <label class="auth-label" for="auth-code-input">
-     <span>Chave temporária de acesso</span>
+     <span>Código de verificação (6 dígitos)</span>
      <div class="auth-input-wrap">
       <span class="auth-icon" aria-hidden="true">⚿</span>
       <input type="text" id="auth-code-input" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" placeholder="000000" class="code-box" autocomplete="one-time-code">
      </div>
-     <small class="auth-hint">Código numérico de 6 dígitos recebido por e-mail (válido por 15 minutos).</small>
+     <small class="auth-hint">Código numérico de 6 dígitos enviado por e-mail (válido por 10 minutos, máx. 5 tentativas).</small>
     </label>
 
     <div id="auth-dev-preview" class="auth-dev-preview hidden">
      <div class="dev-banner-head"><span class="dev-tag">MODO LOCAL (PILOTO)</span><span>Console do servidor</span></div>
-     <p>Chave gerada no servidor: <strong id="auth-dev-code-val"></strong></p>
+     <p>Código gerado no servidor: <strong id="auth-dev-code-val"></strong></p>
     </div>
 
     <button type="submit" class="button primary full auth-submit" id="btn-verify-code">
-     Confirmar chave e entrar <span aria-hidden="true">✓</span>
+     Confirmar código e entrar <span aria-hidden="true">✓</span>
     </button>
 
     <div class="auth-links">
-     <button type="button" class="link-btn" id="btn-resend-code">↻ Reenviar nova chave</button>
+     <button type="button" class="link-btn" id="btn-resend-code">↻ Reenviar novo código</button>
      <span class="link-sep" aria-hidden="true">·</span>
      <button type="button" class="link-btn" id="btn-switch-email">Trocar e-mail</button>
     </div>

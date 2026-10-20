@@ -85,7 +85,10 @@ async function api(path, options = {}){
       updateUserUI();
       showAuthOverlay('Sua sessão expirou ou é necessária autenticação.');
     }
-    throw Error(data.error || `Erro HTTP ${r.status}`);
+    const err = new Error(data.error || `Erro HTTP ${r.status}`);
+    err.status = r.status;
+    err.data = data;
+    throw err;
   }
   return data;
 }
@@ -138,18 +141,43 @@ function hideAuthOverlay(){
   document.body.style.overflow = '';
 }
 
+let cooldownTimer = null;
+function startCooldownTimer(seconds = 60){
+  if(cooldownTimer) clearInterval(cooldownTimer);
+  let remaining = seconds;
+  const resendBtn = $('btn-resend-code');
+  if(!resendBtn) return;
+  const originalText = '↻ Reenviar novo código';
+  resendBtn.disabled = true;
+  resendBtn.textContent = `Aguarde ${remaining}s para reenviar`;
+
+  cooldownTimer = setInterval(() => {
+    remaining -= 1;
+    if(remaining <= 0){
+      clearInterval(cooldownTimer);
+      cooldownTimer = null;
+      resendBtn.disabled = false;
+      resendBtn.textContent = originalText;
+    } else {
+      resendBtn.textContent = `Aguarde ${remaining}s para reenviar`;
+    }
+  }, 1000);
+}
+
 async function requestAuthCode(e){
-  e.preventDefault();
+  if(e && e.preventDefault) e.preventDefault();
   const emailInput = $('auth-email-input');
   const email = emailInput.value.trim().toLowerCase();
-  if(!email.endsWith('@embrapa.br')){
-    setAuthFeedback('Apenas e-mails institucionais @embrapa.br são permitidos.', 'error');
+  if(!email || !email.includes('@') || !email.includes('.')){
+    setAuthFeedback('Por favor, informe um endereço de e-mail válido.', 'error');
     emailInput.focus();
     return;
   }
   const btn = $('btn-request-code');
+  const resendBtn = $('btn-resend-code');
   btn.disabled = true;
-  setAuthFeedback('Gerando chave de acesso e enviando por e-mail...', 'success');
+  if(resendBtn) resendBtn.disabled = true;
+  setAuthFeedback('Enviando código de verificação por e-mail...', 'success');
   try{
     const res = await api('/api/v1/auth/request-code', {
       method: 'POST',
@@ -165,10 +193,14 @@ async function requestAuthCode(e){
     } else {
       $('auth-dev-preview').classList.add('hidden');
     }
-    setAuthFeedback('Chave de 6 dígitos gerada com sucesso! Verifique seu e-mail institucional.', 'success');
+    setAuthFeedback(res.message || 'Código numérico enviado! Verifique seu e-mail.', 'success');
     $('auth-code-input').value = '';
     setTimeout(() => $('auth-code-input').focus(), 50);
+    startCooldownTimer(60);
   }catch(err){
+    if(err.status === 429 && err.data && err.data.retry_after_seconds){
+      startCooldownTimer(err.data.retry_after_seconds);
+    }
     setAuthFeedback(err.message, 'error');
   }finally{
     btn.disabled = false;
@@ -176,7 +208,7 @@ async function requestAuthCode(e){
 }
 
 async function verifyAuthCode(e){
-  e.preventDefault();
+  if(e && e.preventDefault) e.preventDefault();
   const email = $('auth-email-input').value.trim().toLowerCase();
   const code = $('auth-code-input').value.trim();
   if(!code || code.length !== 6){
@@ -186,7 +218,7 @@ async function verifyAuthCode(e){
   }
   const btn = $('btn-verify-code');
   btn.disabled = true;
-  setAuthFeedback('Validando chave de acesso institucional...', 'success');
+  setAuthFeedback('Validando código de verificação...', 'success');
   try{
     const res = await api('/api/v1/auth/verify-code', {
       method: 'POST',
@@ -200,6 +232,9 @@ async function verifyAuthCode(e){
     await refresh();
   }catch(err){
     setAuthFeedback(err.message, 'error');
+    if(err.status === 403){
+      $('auth-code-input').value = '';
+    }
   }finally{
     btn.disabled = false;
   }

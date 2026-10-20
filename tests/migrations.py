@@ -127,7 +127,7 @@ def main():
         run(executable, broken_fk)
         db = sqlite3.connect(broken_fk / "morfo.sqlite3")
         db.execute("PRAGMA foreign_keys=OFF")
-        db.execute("INSERT INTO sessions VALUES('orphan','missing-user','orphan@embrapa.br','2026-01-01T00:00:00Z','2027-01-01T00:00:00Z')")
+        db.execute("INSERT INTO sessions(token,user_id,email,created_at,expires_at) VALUES('orphan','missing-user','orphan@embrapa.br','2026-01-01T00:00:00Z','2027-01-01T00:00:00Z')")
         db.commit(); db.close()
         run(executable, broken_fk, success=False)
 

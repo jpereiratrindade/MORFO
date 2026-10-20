@@ -50,12 +50,20 @@ target_include_directories(morfo_regional_refinement PUBLIC ${CMAKE_SOURCE_DIR}/
 target_link_libraries(morfo_regional_refinement PUBLIC morfo_roots_exp003)
 target_compile_options(morfo_regional_refinement PRIVATE -Wall -Wextra -Wpedantic)
 
-add_executable(morfo-server src/main.cpp src/database.cpp src/analysis.cpp src/tiles.cpp src/learning.cpp src/morfo_profiles.cpp)
+add_executable(morfo-server src/main.cpp src/database.cpp src/auth_smtp.cpp src/analysis.cpp src/tiles.cpp src/learning.cpp src/morfo_profiles.cpp)
 target_link_libraries(morfo-server PRIVATE morfo_roots_exp003 morfo_root_metrics morfo_regional_refinement)
-target_include_directories(morfo-server PRIVATE ${BOOST_INCLUDE_DIR})
+target_include_directories(morfo-server PRIVATE ${CMAKE_SOURCE_DIR}/src ${BOOST_INCLUDE_DIR})
 target_link_libraries(morfo-server PRIVATE Threads::Threads OpenSSL::Crypto SQLite3::SQLite3 PNG::PNG JPEG::JPEG TIFF::TIFF)
 target_compile_definitions(morfo-server PRIVATE BOOST_ERROR_CODE_HEADER_ONLY BOOST_SYSTEM_NO_DEPRECATED)
 target_compile_options(morfo-server PRIVATE -Wall -Wextra -Wpedantic)
+
+if(BUILD_TESTING)
+  add_executable(morfo-auth-smtp-tests tests/test_auth_smtp.cpp src/auth_smtp.cpp src/database.cpp)
+  target_include_directories(morfo-auth-smtp-tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+  target_link_libraries(morfo-auth-smtp-tests PRIVATE Threads::Threads OpenSSL::Crypto SQLite3::SQLite3)
+  target_compile_options(morfo-auth-smtp-tests PRIVATE -UNDEBUG -Wall -Wextra -Wpedantic)
+  add_test(NAME morfo.auth-smtp COMMAND morfo-auth-smtp-tests)
+endif()
 
 include(CTest)
 find_package(Python3 COMPONENTS Interpreter)

@@ -164,7 +164,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix='rizoma-test-') as temp:
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
-        proc = subprocess.Popen([exe,'--data-dir',temp,'--web-dir',web,'--port',str(port)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        env = {**os.environ, 'MORFO_DEV_AUTH': '1'}
+        proc = subprocess.Popen([exe,'--data-dir',temp,'--web-dir',web,'--port',str(port)],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         base=f'http://127.0.0.1:{port}'
         try:
             for _ in range(80):
@@ -182,13 +183,13 @@ def main():
             status,body,_=req(base+'/api/v1/images')
             assert status==401,(status,body)
 
-            # 2. Registration / Code request: only @embrapa.br allowed
-            status,body,_=req(base+'/api/v1/auth/request-code','POST',json.dumps({'email':'invasor@gmail.com'}).encode(),{'Content-Type':'application/json'})
-            assert status==400 and b'@embrapa.br' in body,(status,body)
-            status,body,_=req(base+'/api/v1/auth/request-code','POST',json.dumps({'email':'alvo@embrapa.com'}).encode(),{'Content-Type':'application/json'})
+            # 2. Registration / Code request: invalid email rejected
+            status,body,_=req(base+'/api/v1/auth/request-code','POST',json.dumps({'email':'invalido'}).encode(),{'Content-Type':'application/json'})
+            assert status==400,(status,body)
+            status,body,_=req(base+'/api/v1/auth/request-code','POST',json.dumps({'email':'sem-arroba'}).encode(),{'Content-Type':'application/json'})
             assert status==400,(status,body)
 
-            # 3. Valid institutional email generates OTP code
+            # 3. Valid email generates OTP code in dev mode
             email = 'pesquisador.campo@embrapa.br'
             status,body,_=req(base+'/api/v1/auth/request-code','POST',json.dumps({'email':email}).encode(),{'Content-Type':'application/json'})
             assert status==200,(status,body)
@@ -198,7 +199,7 @@ def main():
 
             # 4. Invalid OTP rejected
             status,body,_=req(base+'/api/v1/auth/verify-code','POST',json.dumps({'email':email,'code':'999999'}).encode(),{'Content-Type':'application/json'})
-            assert status==401,(status,body)
+            assert status==400,(status,body)
 
             # 5. Correct OTP establishes session
             status,body,hdrs=req(base+'/api/v1/auth/verify-code','POST',json.dumps({'email':email,'code':otp_code}).encode(),{'Content-Type':'application/json'})

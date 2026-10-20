@@ -13,7 +13,7 @@
 namespace rizoma::database {
 namespace {
 
-constexpr int latest_version=4;
+constexpr int latest_version=5;
 constexpr std::string_view migration_name="establish-v0.2.0-schema-and-history";
 // SHA-256 of the reviewed migration specification. Changing migration 1 requires
 // a new migration, never replacement of this checksum.
@@ -24,6 +24,9 @@ constexpr std::string_view learning_migration_name="learning-feedback-foundation
 constexpr std::string_view learning_migration_checksum="b4e514bc655bb36bf04a03c7a07dc0e39b0694140ac1c53a606d70a67fcaf6fe";
 constexpr std::string_view crud_migration_name="crud-soft-delete-and-lifecycle";
 constexpr std::string_view crud_migration_checksum="4a7e2b1c8f39501a9d8e7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f";
+constexpr std::string_view auth_smtp_migration_name="auth-smtp-hardened-security";
+constexpr std::string_view auth_smtp_migration_checksum="e30687ca81045af756e2dd475d88f3bcd90b276cdf8112da6f8aa3b3a46ff2d9";
+
 
 std::string sqlite_error(sqlite3* db,const std::string& context){
  return context+": "+(db?sqlite3_errmsg(db):"SQLite unavailable");
@@ -225,6 +228,46 @@ void apply_migration_4(sqlite3* db){
  )SQL");
 }
 
+void apply_migration_5(sqlite3* db){
+ execute(db,R"SQL(
+CREATE TABLE IF NOT EXISTS auth_audit_events(
+ id TEXT PRIMARY KEY,
+ email TEXT NOT NULL,
+ ip_address TEXT NOT NULL,
+ action TEXT NOT NULL,
+ decision TEXT NOT NULL,
+ details TEXT NOT NULL,
+ occurred_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_auth_audit_email ON auth_audit_events(email, occurred_at);
+)SQL");
+ auto user_cols=columns(db,"users");
+ if(!user_cols.contains("role")){
+  execute(db,"ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin','researcher','user'));");
+ }
+ if(!user_cols.contains("is_active")){
+  execute(db,"ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1;");
+ }
+ auto sess_cols=columns(db,"sessions");
+ if(!sess_cols.contains("token_hash")){
+  execute(db,"ALTER TABLE sessions ADD COLUMN token_hash TEXT NOT NULL DEFAULT '';");
+ }
+ if(!sess_cols.contains("last_seen_at")){
+  execute(db,"ALTER TABLE sessions ADD COLUMN last_seen_at TEXT NOT NULL DEFAULT '';");
+ }
+ auto code_cols=columns(db,"auth_codes");
+ if(!code_cols.contains("code_hmac")){
+  execute(db,"ALTER TABLE auth_codes ADD COLUMN code_hmac TEXT NOT NULL DEFAULT '';");
+ }
+ if(!code_cols.contains("attempts")){
+  execute(db,"ALTER TABLE auth_codes ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0;");
+ }
+ if(!code_cols.contains("max_attempts")){
+  execute(db,"ALTER TABLE auth_codes ADD COLUMN max_attempts INTEGER NOT NULL DEFAULT 5;");
+ }
+ execute(db,"CREATE INDEX IF NOT EXISTS idx_auth_codes_lookup ON auth_codes(email, expires_at, used_at);");
+}
+
 void verify_database(sqlite3* db){
  {
   Statement st(db,"PRAGMA integrity_check");
@@ -294,7 +337,7 @@ void migrate(const std::filesystem::path& file){
    version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL
   ))SQL");
   Statement known(db,"SELECT version,name,checksum FROM schema_migrations ORDER BY version");
-  bool applied=false,analysis_applied=false,learning_applied=false,crud_applied=false;
+  bool applied=false,analysis_applied=false,learning_applied=false,crud_applied=false,auth_smtp_applied=false;
   while(sqlite3_step(known.get())==SQLITE_ROW){
    const int version=sqlite3_column_int(known.get(),0);
    if(version>latest_version)throw std::runtime_error("Database was migrated by a newer RIZOMA version");
@@ -318,10 +361,16 @@ void migrate(const std::filesystem::path& file){
     if(known.text(1)!=crud_migration_name||known.text(2)!=crud_migration_checksum)
      throw std::runtime_error("Migration 4 checksum or name does not match the application");
    }
+   if(version==5){
+    auth_smtp_applied=true;
+    if(known.text(1)!=auth_smtp_migration_name||known.text(2)!=auth_smtp_migration_checksum)
+     throw std::runtime_error("Migration 5 checksum or name does not match the application");
+   }
   }
   if(analysis_applied&&!applied)throw std::runtime_error("Migration history is not contiguous");
   if(learning_applied&&!analysis_applied)throw std::runtime_error("Migration history is not contiguous");
   if(crud_applied&&!learning_applied)throw std::runtime_error("Migration history is not contiguous");
+  if(auth_smtp_applied&&!crud_applied)throw std::runtime_error("Migration history is not contiguous");
   if(!applied){
    apply_migration_1(db);
    Statement record(db,"INSERT INTO schema_migrations(version,name,checksum,applied_at) VALUES(1,?,?,?)");
@@ -345,6 +394,12 @@ void migrate(const std::filesystem::path& file){
    Statement record(db,"INSERT INTO schema_migrations(version,name,checksum,applied_at) VALUES(4,?,?,?)");
    record.bind(1,std::string(crud_migration_name));record.bind(2,std::string(crud_migration_checksum));record.bind(3,utc_now());
    if(sqlite3_step(record.get())!=SQLITE_DONE)throw std::runtime_error(sqlite_error(db,"Cannot record migration 4"));
+  }
+  if(!auth_smtp_applied){
+   apply_migration_5(db);
+   Statement record(db,"INSERT INTO schema_migrations(version,name,checksum,applied_at) VALUES(5,?,?,?)");
+   record.bind(1,std::string(auth_smtp_migration_name));record.bind(2,std::string(auth_smtp_migration_checksum));record.bind(3,utc_now());
+   if(sqlite3_step(record.get())!=SQLITE_DONE)throw std::runtime_error(sqlite_error(db,"Cannot record migration 5"));
   }
   verify_database(db);
   execute(db,"COMMIT");

@@ -30,6 +30,7 @@
 #include "morfo_profiles.hpp"
 #include "morfo_root_metrics.hpp"
 #include "regional_refinement.hpp"
+#include "auth_smtp.hpp"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -72,13 +73,18 @@ constexpr int TILE_SIZE=256;
 constexpr const char* PIPELINE="rizoma-exp004-progressive-0.4.0";
 struct Failure : std::runtime_error {using std::runtime_error::runtime_error;};
 struct Raster {int w=0,h=0;std::vector<unsigned char> rgba;};
-struct App {fs::path root,web; std::string host="0.0.0.0"; unsigned short port=8091; std::atomic<int>active{0};};
+struct App {
+    fs::path root, web;
+    std::string host = "0.0.0.0";
+    unsigned short port = 8091;
+    std::atomic<int> active{0};
+    mutable morfo::auth::AuthSmtpService auth_service{morfo::auth::AuthSmtpConfig::from_environment()};
+};
 static std::string utc_offset(int seconds){auto t=std::time(nullptr)+seconds; std::tm v{};gmtime_r(&t,&v);char buf[32];std::strftime(buf,sizeof(buf),"%Y-%m-%dT%H:%M:%SZ",&v);return buf;}
 [[maybe_unused]] static std::string utc(){return utc_offset(0);}
 static std::string esc(std::string_view s){std::string out;out.reserve(s.size()+8);for(unsigned char c:s){switch(c){case '"':out+="\\\"";break;case '\\':out+="\\\\";break;case '\n':out+="\\n";break;case '\r':out+="\\r";break;case '\t':out+="\\t";break;default:if(c<32){char b[7];std::snprintf(b,sizeof(b),"\\u%04x",c);out+=b;}else out+=char(c);}}return out;}
 static std::string q(std::string_view s){return "\""+esc(s)+"\"";}
 static std::string hex(const unsigned char* ptr,std::size_t n){static const char h[]="0123456789abcdef";std::string out;out.reserve(n*2);for(std::size_t i=0;i<n;++i){out+=h[ptr[i]>>4];out+=h[ptr[i]&15];}return out;}
-static std::string hash256(const std::string& data){unsigned char dig[EVP_MAX_MD_SIZE];unsigned int len=0;if(EVP_Digest(data.data(),data.size(),dig,&len,EVP_sha256(),nullptr)!=1)throw Failure("SHA-256 unavailable");return hex(dig,len);}
 static std::string hash256_file(const fs::path& path){
  std::ifstream input(path,std::ios::binary);if(!input)throw Failure("could not hash staged file");
  std::unique_ptr<EVP_MD_CTX,decltype(&EVP_MD_CTX_free)> context(EVP_MD_CTX_new(),EVP_MD_CTX_free);
@@ -98,22 +104,7 @@ static std::string zip_store(std::vector<ZipEntry> entries){
  const auto central_size=static_cast<std::uint32_t>(out.size()-central_offset);zip_u32(out,0x06054b50);zip_u16(out,0);zip_u16(out,0);zip_u16(out,static_cast<std::uint16_t>(entries.size()));zip_u16(out,static_cast<std::uint16_t>(entries.size()));zip_u32(out,central_size);zip_u32(out,central_offset);zip_u16(out,0);return out;
 }
 static std::string rand_id(){unsigned char b[12];if(RAND_bytes(b,sizeof(b))!=1)throw Failure("random generator unavailable");return hex(b,sizeof(b));}
-static std::string rand_otp(){unsigned int val=0;if(RAND_bytes(reinterpret_cast<unsigned char*>(&val),sizeof(val))!=1)throw Failure("random generator unavailable");val%=1000000;char buf[8];std::snprintf(buf,sizeof(buf),"%06u",val);return buf;}
-static std::string rand_session_token(){unsigned char b[32];if(RAND_bytes(b,sizeof(b))!=1)throw Failure("random generator unavailable");return hex(b,sizeof(b));}
 static std::string normalize_email(std::string s){while(!s.empty()&&std::isspace(static_cast<unsigned char>(s.front())))s.erase(s.begin());while(!s.empty()&&std::isspace(static_cast<unsigned char>(s.back())))s.pop_back();for(char& c:s)c=static_cast<char>(std::tolower(static_cast<unsigned char>(c)));return s;}
-static bool is_embrapa_email(const std::string& email){
- const std::string suffix="@embrapa.br";
- if(email.size()<=suffix.size())return false;
- if(email.substr(email.size()-suffix.size())!=suffix)return false;
- std::string local=email.substr(0,email.size()-suffix.size());
- if(local.empty()||local.front()=='.'||local.back()=='.')return false;
- for(std::size_t i=0;i<local.size();++i){
-  char c=local[i];
-  if(c=='.'&&i+1<local.size()&&local[i+1]=='.')return false;
-  if(!(std::isalnum(static_cast<unsigned char>(c))||c=='.'||c=='_'||c=='-'||c=='+'))return false;
- }
- return true;
-}
 static std::string name_from_email(const std::string& email){
  auto at=email.find('@');std::string local=at==std::string::npos?email:email.substr(0,at);
  std::string name;bool cap=true;
@@ -166,55 +157,6 @@ static std::optional<double> json_extract_optional_double(const std::string& bod
 }
 static std::vector<double> json_extract_number_array(const std::string& body,const std::string& key){
  const std::string needle="\""+key+"\"";auto p=body.find(needle);if(p==std::string::npos)return {};p=body.find('[',p+needle.size());if(p==std::string::npos)return {};const auto end=body.find(']',p+1);if(end==std::string::npos)throw Failure("Invalid JSON number array: "+key);std::vector<double> values;while(++p<end){while(p<end&&(std::isspace(static_cast<unsigned char>(body[p]))||body[p]==','))++p;if(p>=end)break;std::size_t used=0;double value=0;try{value=std::stod(body.substr(p,end-p),&used);}catch(...){throw Failure("Invalid JSON number array: "+key);}if(!used||!std::isfinite(value))throw Failure("Invalid JSON number array: "+key);values.push_back(value);p+=used-1;}return values;
-}
-static bool send_email_code(const std::string& to_email,const std::string& code,std::string& err_out){
- const char* smtp_host_env=std::getenv("MORFO_SMTP_HOST");
- std::string smtp_host=smtp_host_env?smtp_host_env:"";
- if(smtp_host.empty()){
-  std::cout<<"\n[RIZOMA AUTH] ========================================\n"
-           <<"[RIZOMA AUTH] Chave de acesso institucional gerada:\n"
-           <<"[RIZOMA AUTH] Destinatário : "<<to_email<<"\n"
-           <<"[RIZOMA AUTH] Código OTP   : "<<code<<" (válido por 15 min)\n"
-           <<"[RIZOMA AUTH] ========================================\n\n"<<std::flush;
-  return true;
- }
- const char* smtp_port_env=std::getenv("MORFO_SMTP_PORT");
- std::string smtp_port=(smtp_port_env&&*smtp_port_env)?smtp_port_env:"587";
- const char* smtp_user_env=std::getenv("MORFO_SMTP_USER");
- const char* smtp_pass_env=std::getenv("MORFO_SMTP_PASS");
- const char* smtp_from_env=std::getenv("MORFO_SMTP_FROM");
- std::string smtp_from=(smtp_from_env&&*smtp_from_env)?smtp_from_env:"morfo@embrapa.br";
-
- std::ostringstream msg;
- msg<<"From: \"MORFO SisTer\" <"<<smtp_from<<">\r\n"
-    <<"To: <"<<to_email<<">\r\n"
-    <<"Subject: MORFO - Chave de acesso: "<<code<<"\r\n"
-    <<"Content-Type: text/plain; charset=utf-8\r\n\r\n"
-    <<"Olá!\r\n\r\n"
-    <<"Você solicitou acesso ao RIZOMA (Ecossistema SisTer - Embrapa).\r\n"
-    <<"Sua chave temporária de acesso é:\r\n\r\n"
-    <<"    "<<code<<"\r\n\r\n"
-    <<"Esta chave é de uso único e expira em 15 minutos.\r\n"
-    <<"Se você não solicitou este código, por favor ignore este e-mail.\r\n\r\n"
-    <<"--\r\nMORFO · Imagem primeiro · Embrapa\r\n";
-
- std::ostringstream cmd;
- cmd<<"curl --silent --show-error --url 'smtp://"<<smtp_host<<":"<<smtp_port<<"'";
- cmd<<" --mail-from "<<q(smtp_from)<<" --mail-rcpt "<<q(to_email);
- if(smtp_port=="587"||smtp_port=="25")cmd<<" --ssl-reqd";
- if(smtp_user_env&&*smtp_user_env)cmd<<" --user "<<q(std::string(smtp_user_env)+":"+(smtp_pass_env?smtp_pass_env:""));
-
- FILE* pipe=popen(cmd.str().c_str(),"w");
- if(!pipe){err_out="Não foi possível iniciar envio de e-mail";return false;}
- std::string email_data=msg.str();
- fwrite(email_data.data(),1,email_data.size(),pipe);
- int status=pclose(pipe);
- if(status!=0){
-  err_out="Falha no envio via SMTP (código "+std::to_string(status)+")";
-  std::cerr<<"[RIZOMA SMTP ERROR] "<<err_out<<"\n";
-  return false;
- }
- return true;
 }
 static void put(const fs::path& p,const std::string& data){fs::create_directories(p.parent_path());std::ofstream f(p,std::ios::binary|std::ios::trunc);if(!f)throw Failure("could not create file");f.write(data.data(),std::streamsize(data.size()));f.flush();if(!f)throw Failure("could not write file");::chmod(p.c_str(),0600);}
 static std::string slurp(const fs::path& p){std::ifstream f(p,std::ios::binary);if(!f)throw Failure("could not read file");return {std::istreambuf_iterator<char>(f),std::istreambuf_iterator<char>()};}
@@ -977,17 +919,14 @@ static std::string extract_token(const http::request<http::string_body>& req){
  }
  return "";
 }
-struct UserInfo{std::string id;std::string email;std::string name;};
+struct UserInfo{std::string id;std::string email;std::string name;std::string role;};
 static std::optional<UserInfo> authenticate(const App& app,const http::request<http::string_body>& req){
  std::string token=extract_token(req);
  if(token.empty())return std::nullopt;
  Db d(app.root/"morfo.sqlite3");
- Stmt st(d.p,"SELECT u.id, u.email, u.name, s.expires_at FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.token = ?");
- st.bind(1,token);
- if(sqlite3_step(st.p)!=SQLITE_ROW)return std::nullopt;
- std::string exp=col(st.p,3);
- if(exp<utc_offset(0))return std::nullopt;
- return UserInfo{col(st.p,0),col(st.p,1),col(st.p,2)};
+ auto user=app.auth_service.validate_session(d.p,token);
+ if(!user)return std::nullopt;
+ return UserInfo{user->id,user->email,user->name,user->role};
 }
 
 
@@ -1319,101 +1258,67 @@ static Response handle(const App& app,const http::request<http::string_body>& re
   auto user=authenticate(app,req);
   if(!user)return respond(http::status::ok,v,"{\"authenticated\":false}");
   std::ostringstream o;
-  o<<"{\"authenticated\":true,\"user\":{\"id\":"<<q(user->id)<<",\"email\":"<<q(user->email)<<",\"name\":"<<q(user->name)<<"}}";
+  o<<"{\"authenticated\":true,\"user\":{\"id\":"<<q(user->id)<<",\"email\":"<<q(user->email)<<",\"name\":"<<q(user->name)<<",\"role\":"<<q(user->role)<<"}}";
+  return respond(http::status::ok,v,o.str());
+ }
+ if(req.method()==http::verb::get&&p=="/api/v1/auth/providers"){
+  std::ostringstream o;
+  o<<"{\"email_otp\":true,\"google_oauth\":false,\"smtp_from\":"<<q(app.auth_service.config().smtp_from)<<"}";
   return respond(http::status::ok,v,o.str());
  }
  if(req.method()==http::verb::post&&p=="/api/v1/auth/request-code"){
   std::string raw_email=json_extract_string(req.body(),"email");
   std::string email=normalize_email(raw_email);
-  if(!is_embrapa_email(email)){
-   return problem(v,http::status::bad_request,"Apenas e-mails institucionais @embrapa.br são permitidos.");
+  std::string remote_ip;
+  if(auto it=req.find("X-Forwarded-For");it!=req.end()){
+   remote_ip=std::string(it->value());
+   auto c=remote_ip.find(',');if(c!=std::string::npos)remote_ip=remote_ip.substr(0,c);
+  }else if(auto it2=req.find("X-Client-IP");it2!=req.end()){
+   remote_ip=std::string(it2->value());
   }
-  std::string code=rand_otp();
-  std::string code_hash=hash256(code);
-  std::string exp=utc_offset(15*60);
-  std::string now=utc_offset(0);
-  std::string code_id=rand_id();
   Db db(app.root/"morfo.sqlite3");
-  Stmt st(db.p,"INSERT INTO auth_codes(id, email, code, code_hash, expires_at, used_at, created_at) VALUES(?,?,?,?,?,NULL,?)");
-  st.bind(1,code_id);st.bind(2,email);st.bind(3,code);st.bind(4,code_hash);st.bind(5,exp);st.bind(6,now);
-  if(sqlite3_step(st.p)!=SQLITE_DONE)return problem(v,http::status::internal_server_error,"Falha ao gerar código de acesso");
-  std::string err;
-  send_email_code(email,code,err);
-  const char* host_env=std::getenv("MORFO_SMTP_HOST");
-  bool is_dev=(host_env==nullptr||*host_env=='\0');
+  auto res=app.auth_service.request_code(db.p,email,remote_ip);
+  if(!res.ok){
+   return problem(v,static_cast<http::status>(res.status_code),res.user_message);
+  }
   std::ostringstream resp;
-  resp<<"{\"status\":\"ok\",\"message\":\"Chave de acesso enviada para "<<esc(email)<<".\"";
-  if(is_dev)resp<<",\"dev_code\":"<<q(code);
+  resp<<"{\"status\":\"ok\",\"message\":"<<q(res.user_message);
+  if(!res.dev_code.empty()){
+   resp<<",\"dev_code\":"<<q(res.dev_code);
+  }
   resp<<"}";
   return respond(http::status::ok,v,resp.str());
  }
  if(req.method()==http::verb::post&&p=="/api/v1/auth/verify-code"){
   std::string email=normalize_email(json_extract_string(req.body(),"email"));
   std::string code=json_extract_string(req.body(),"code");
-  code.erase(std::remove_if(code.begin(),code.end(),::isspace),code.end());
-  if(!is_embrapa_email(email)){
-   return problem(v,http::status::bad_request,"Apenas e-mails institucionais @embrapa.br são permitidos.");
-  }
-  if(code.empty()||code.size()>16){
-   return problem(v,http::status::bad_request,"Código de verificação inválido.");
+  std::string remote_ip;
+  if(auto it=req.find("X-Forwarded-For");it!=req.end()){
+   remote_ip=std::string(it->value());
+   auto c=remote_ip.find(',');if(c!=std::string::npos)remote_ip=remote_ip.substr(0,c);
+  }else if(auto it2=req.find("X-Client-IP");it2!=req.end()){
+   remote_ip=std::string(it2->value());
   }
   Db db(app.root/"morfo.sqlite3");
-  Stmt st(db.p,"SELECT id, expires_at FROM auth_codes WHERE email=? AND code=? AND used_at IS NULL ORDER BY created_at DESC LIMIT 1");
-  st.bind(1,email);st.bind(2,code);
-  if(sqlite3_step(st.p)!=SQLITE_ROW){
-   return problem(v,http::status::unauthorized,"Chave de acesso inválida ou já utilizada.");
+  auto res=app.auth_service.verify_code(db.p,email,code,remote_ip);
+  if(!res.ok){
+   return problem(v,static_cast<http::status>(res.status_code),res.user_message);
   }
-  std::string code_id=col(st.p,0);
-  std::string exp=col(st.p,1);
-  std::string now=utc_offset(0);
-  if(exp<now){
-   return problem(v,http::status::unauthorized,"Chave de acesso expirada. Solicite uma nova chave.");
-  }
-  Stmt mark(db.p,"UPDATE auth_codes SET used_at=? WHERE id=?");
-  mark.bind(1,now);mark.bind(2,code_id);
-  sqlite3_step(mark.p);
-
-  std::string user_id;
-  std::string user_name;
-  Stmt ufind(db.p,"SELECT id, name FROM users WHERE email=?");
-  ufind.bind(1,email);
-  if(sqlite3_step(ufind.p)==SQLITE_ROW){
-   user_id=col(ufind.p,0);
-   user_name=col(ufind.p,1);
-   Stmt uupd(db.p,"UPDATE users SET last_login_at=? WHERE id=?");
-   uupd.bind(1,now);uupd.bind(2,user_id);
-   sqlite3_step(uupd.p);
-  }else{
-   user_id=rand_id();
-   user_name=name_from_email(email);
-   Stmt uins(db.p,"INSERT INTO users(id, email, name, created_at, last_login_at) VALUES(?,?,?,?,?)");
-   uins.bind(1,user_id);uins.bind(2,email);uins.bind(3,user_name);uins.bind(4,now);uins.bind(5,now);
-   sqlite3_step(uins.p);
-  }
-  std::string session_token=rand_session_token();
-  std::string session_exp=utc_offset(7*24*3600);
-  Stmt sins(db.p,"INSERT INTO sessions(token, user_id, email, created_at, expires_at) VALUES(?,?,?,?,?)");
-  sins.bind(1,session_token);sins.bind(2,user_id);sins.bind(3,email);sins.bind(4,now);sins.bind(5,session_exp);
-  sqlite3_step(sins.p);
-
-  Stmt ev(db.p,"INSERT INTO events(image_id, event, at, detail) VALUES(NULL, 'USER_LOGIN', ?, ?)");
-  ev.bind(1,now);ev.bind(2,email);
-  sqlite3_step(ev.p);
-
   std::ostringstream resp;
-  resp<<"{\"status\":\"ok\",\"session_token\":"<<q(session_token)
-      <<",\"user\":{\"id\":"<<q(user_id)<<",\"email\":"<<q(email)<<",\"name\":"<<q(user_name)<<"}}";
+  resp<<"{\"status\":\"ok\",\"session_token\":"<<q(res.session_token)
+      <<",\"user\":{\"id\":"<<q(res.user.id)
+      <<",\"email\":"<<q(res.user.email)
+      <<",\"name\":"<<q(res.user.name)
+      <<",\"role\":"<<q(res.user.role)<<"}}";
   auto r=respond(http::status::ok,v,resp.str());
-  r.set(http::field::set_cookie,"morfo_session="+session_token+"; Path=/; HttpOnly; SameSite=Lax");
+  r.set(http::field::set_cookie,"morfo_session="+res.session_token+"; Path=/; HttpOnly; SameSite=Lax");
   return r;
  }
  if(req.method()==http::verb::post&&p=="/api/v1/auth/logout"){
   std::string token=extract_token(req);
   if(!token.empty()){
    Db db(app.root/"morfo.sqlite3");
-   Stmt st(db.p,"DELETE FROM sessions WHERE token=?");
-   st.bind(1,token);
-   sqlite3_step(st.p);
+   app.auth_service.revoke_session(db.p,token);
   }
   auto r=respond(http::status::ok,v,"{\"status\":\"ok\"}");
   r.set(http::field::set_cookie,"morfo_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax");
@@ -1427,7 +1332,7 @@ static Response handle(const App& app,const http::request<http::string_body>& re
  if(p=="/api/v1/images"||p=="/api/v1/root-metrics"||p=="/api/v1/parameter-presets"||p=="/api/v1/export/manifest.csv"||p.starts_with("/api/v1/images/")||p.starts_with("/api/v1/refinements/")||p.starts_with("/api/v1/parameter-presets/")||p.starts_with("/api/v1/analysis-regions/")||p.starts_with("/api/v1/analysis-runs/")||p.starts_with("/api/v1/root-metrics/")||p.starts_with("/api/v1/calibrations/")){
   auto user=authenticate(app,req);
   if(!user){
-   return problem(v,http::status::unauthorized,"Autenticação necessária. Acesse com seu e-mail institucional @embrapa.br.");
+   return problem(v,http::status::unauthorized,"Autenticação necessária. Solicite uma chave de acesso para seu e-mail.");
   }
   if(req.method()==http::verb::get&&p=="/api/v1/images")return respond(http::status::ok,v,all_images(app,user->id));
   if(req.method()==http::verb::get&&p=="/api/v1/export/manifest.csv")return respond(http::status::ok,v,manifest(app,user->id),"text/csv; charset=utf-8");
@@ -1605,15 +1510,18 @@ static http::status ingest_status(std::string_view message){
 static void session(tcp::socket socket,App& app){
  struct ActiveGuard {App& app;~ActiveGuard(){--app.active;}} active_guard{app};
  try{
+ boost::system::error_code ep_ec;
+ auto ep = socket.remote_endpoint(ep_ec);
+ std::string remote_client_ip = ep_ec ? "127.0.0.1" : ep.address().to_string();
  beast::tcp_stream stream(std::move(socket));stream.expires_after(std::chrono::minutes(5));beast::flat_buffer buffer;http::request_parser<http::buffer_body> parser;parser.header_limit(16*1024);parser.body_limit(MAX_UPLOAD);beast::error_code ec;http::read_header(stream,buffer,parser,ec);
  if(ec)return;
- auto req=request_header(parser.get());Response r=problem(req.version(),http::status::internal_server_error,"Server error");
+ auto req=request_header(parser.get());req.set("X-Client-IP", remote_client_ip);Response r=problem(req.version(),http::status::internal_server_error,"Server error");
  const std::string target(req.target());const std::string path=target.substr(0,target.find('?'));
  const bool upload=req.method()==http::verb::post&&path=="/api/v1/images";
  if(!allowed_origin(app,req))r=problem(req.version(),http::status::forbidden,"Cross-origin requests are disabled");
  else if(upload){
   const auto user=authenticate(app,req);
-  if(!user)r=problem(req.version(),http::status::unauthorized,"Autenticação necessária. Acesse com seu e-mail institucional @embrapa.br.");
+  if(!user)r=problem(req.version(),http::status::unauthorized,"Autenticação necessária. Solicite uma chave de acesso para seu e-mail.");
   else if((req.find("X-Morfo-Client")==req.end()||req["X-Morfo-Client"]!="web-v0.2.0")&&
           (req.find("X-Rizoma-Client")==req.end()||req["X-Rizoma-Client"]!="web-v0.2.0"))r=problem(req.version(),http::status::forbidden,"Client header required");
   else if(req[http::field::content_type]!="application/octet-stream")r=problem(req.version(),http::status::unsupported_media_type,"Use application/octet-stream");
@@ -1654,12 +1562,83 @@ static void session(tcp::socket socket,App& app){
 }
 int main(int argc,char** argv){try{
  ::umask(0077);App app;app.root="./var";app.web="./web";bool migrate_only=false;
+ std::string add_user_email;
+ std::string add_user_name;
+ std::string add_user_role="admin";
+ bool list_users=false;
+ std::string deactivate_email;
+ std::string activate_email;
+
  TIFFSetWarningHandler(nullptr);TIFFSetErrorHandler(nullptr);
- for(int i=1;i<argc;i++){std::string a=argv[i];if(a=="--data-dir"&&i+1<argc)app.root=argv[++i];else if(a=="--web-dir"&&i+1<argc)app.web=argv[++i];else if(a=="--host"&&i+1<argc)app.host=argv[++i];else if(a=="--port"&&i+1<argc){int port=std::stoi(argv[++i]);if(port<1024||port>65535)throw Failure("Port out of range");app.port=static_cast<unsigned short>(port);}else if(a=="--migrate-only")migrate_only=true;else throw Failure("Usage: rizoma-server [--host IP] [--data-dir DIRECTORY] [--web-dir DIRECTORY] [--port 1024..65535] [--migrate-only]");}
- initialize(app);if(migrate_only){std::cout<<"RIZOMA SQLite migrations complete\n";return 0;}asio::io_context io;
+ for(int i=1;i<argc;i++){
+  std::string a=argv[i];
+  if(a=="--data-dir"&&i+1<argc)app.root=argv[++i];
+  else if(a=="--web-dir"&&i+1<argc)app.web=argv[++i];
+  else if(a=="--host"&&i+1<argc)app.host=argv[++i];
+  else if(a=="--port"&&i+1<argc){
+   int port=std::stoi(argv[++i]);
+   if(port<1024||port>65535)throw Failure("Port out of range");
+   app.port=static_cast<unsigned short>(port);
+  }
+  else if(a=="--migrate-only")migrate_only=true;
+  else if(a=="--add-user"&&i+1<argc)add_user_email=argv[++i];
+  else if(a=="--name"&&i+1<argc)add_user_name=argv[++i];
+  else if(a=="--role"&&i+1<argc)add_user_role=argv[++i];
+  else if(a=="--list-users")list_users=true;
+  else if(a=="--deactivate-user"&&i+1<argc)deactivate_email=argv[++i];
+  else if(a=="--activate-user"&&i+1<argc)activate_email=argv[++i];
+  else throw Failure("Usage: morfo-server [--host IP] [--data-dir DIRECTORY] [--web-dir DIRECTORY] [--port 1024..65535] [--migrate-only] [--add-user EMAIL [--name NAME] [--role ROLE]] [--list-users] [--deactivate-user EMAIL] [--activate-user EMAIL]");
+ }
+ initialize(app);
+ if(migrate_only){std::cout<<"MORFO SQLite migrations complete\n";return 0;}
+ if(!add_user_email.empty()){
+  Db db(app.root/"morfo.sqlite3");
+  if(add_user_name.empty())add_user_name=name_from_email(add_user_email);
+  if(app.auth_service.add_user(db.p,add_user_email,add_user_name,add_user_role)){
+   std::cout<<"Usuário registrado com sucesso: "<<add_user_email<<" (Nome: "<<add_user_name<<", Perfil: "<<add_user_role<<")\n";
+   return 0;
+  }else{
+   std::cerr<<"Falha ao registrar usuário.\n";
+   return 1;
+  }
+ }
+ if(list_users){
+  Db db(app.root/"morfo.sqlite3");
+  auto users=app.auth_service.list_users(db.p);
+  std::cout<<"Usuários cadastrados ("<<users.size()<<"):\n";
+  for(const auto& u:users){
+   std::cout<<" - "<<u.email<<" ["<<u.role<<"] "
+            <<(u.is_active?"ATIVO":"INATIVO")
+            <<" - "<<u.name
+            <<" (Criado em: "<<u.created_at
+            <<", Último login: "<<(u.last_login_at.empty()?"nunca":u.last_login_at)<<")\n";
+  }
+  return 0;
+ }
+ if(!deactivate_email.empty()){
+  Db db(app.root/"morfo.sqlite3");
+  if(app.auth_service.set_user_active(db.p,deactivate_email,false)){
+   std::cout<<"Usuário desativado: "<<deactivate_email<<"\n";
+   return 0;
+  }else{
+   std::cerr<<"Falha ao desativar usuário.\n";
+   return 1;
+  }
+ }
+ if(!activate_email.empty()){
+  Db db(app.root/"morfo.sqlite3");
+  if(app.auth_service.set_user_active(db.p,activate_email,true)){
+   std::cout<<"Usuário ativado: "<<activate_email<<"\n";
+   return 0;
+  }else{
+   std::cerr<<"Falha ao ativar usuário.\n";
+   return 1;
+  }
+ }
+ asio::io_context io;
  boost::system::error_code ec;auto addr=asio::ip::make_address(app.host,ec);
  if(ec)throw Failure("Invalid IP address for --host: "+app.host);
  tcp::acceptor acceptor(io,{addr,app.port});
  std::cout<<"MORFO v0.1.0 — http://"<<app.host<<":"<<app.port<<(app.host=="127.0.0.1"?" (loopback only)":app.host=="0.0.0.0"?" (all interfaces / LAN)":" (local network)")<<"\n"<<"Data dir: "<<fs::absolute(app.root)<<"\n"<<std::flush;
  for(;;){tcp::socket s(io);acceptor.accept(s);if(app.active.load()>=4){s.close();continue;}++app.active;std::thread(session,std::move(s),std::ref(app)).detach();}
- }catch(const std::exception& e){std::cerr<<"RIZOMA fatal: "<<e.what()<<"\n";return 1;}}
+ }catch(const std::exception& e){std::cerr<<"MORFO fatal: "<<e.what()<<"\n";return 1;}}
