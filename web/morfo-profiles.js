@@ -12,6 +12,8 @@
   const rootPath = id => `/api/v1/images/${encodeURIComponent(id)}/profiles/${profile}`;
   const artifactPath = (id,run,kind) => `${rootPath(id)}/${encodeURIComponent(run)}/${kind}`;
   const metricsPath = (id,run) => `${rootPath(id)}/${encodeURIComponent(run)}/metrics`;
+  const refinementMetricsPath = id => `/api/v1/refinements/${encodeURIComponent(id)}/metrics`;
+  const activeMetricsPath = () => state.refinementId?refinementMetricsPath(state.refinementId):metricsPath(state.imageId,state.run.id);
   const metricsExportPath = (id,run,format) => `${metricsPath(id,run)}/export.${format}`;
   const calibrationPath = id => `/api/v1/images/${encodeURIComponent(id)}/calibrations`;
   let workspace, layer, panel;
@@ -65,26 +67,27 @@
     }
     const wrap=node('section',{className:'morfo-result-info'});
     const eyebrow=node('p',{className:'morfo-eyebrow',text:'EVIDÊNCIA COMPUTACIONAL'});
-    const title=node('h3',{text:'Resultado do perfil'});
+    const title=node('h3',{text:state.refinementId?'Resultado refinado consolidado':'Resultado do perfil'});
     const status=node('p',{className:'morfo-validation',text:'NÃO VALIDADO · candidatos de anomalia'});
     const dl=node('dl',{className:'morfo-stat-list'});
     const values=[
       ['Perfil',`${report.profile||profile} · ${report.version||'EXP-003'}`],
-      ['Pixels candidatos',number.format(report.candidate_pixels ?? run.candidate_pixels)],
-      ['Componentes conexos',number.format(report.components ?? run.components)],
+      ['Pixels candidatos',number.format(state.refinementId&&state.metrics?state.metrics.candidate_pixels:(report.candidate_pixels ?? run.candidate_pixels))],
+      ['Componentes conexos',number.format(state.refinementId&&state.metrics?(state.metrics.components?.length||0):(report.components ?? run.components))],
       ['Pixels abstidos nas bordas',number.format(report.border_abstentions ?? run.border_abstentions)],
       ['Classificação',report.classification||'ANOMALY_CANDIDATE'],
       ['Identidade biológica','DESCONHECIDA'],
       ['Data da execução',run.created_at||'Não informada'],
-      ['ID da execução',run.id]
+      ['ID da execução',state.refinementId||run.id]
     ];
     for(const [key,value] of values){dl.append(node('dt',{text:key}),node('dd',{text:String(value)}));}
     const dl2=node('dl',{className:'morfo-hashes'});
     dl2.append(node('dt',{text:'SHA-256 da imagem'}),node('dd',{text:report.original_sha256||'Indisponível'}),
-               node('dt',{text:'SHA-256 da máscara'}),node('dd',{text:report.mask_sha256||'Indisponível'}));
+               node('dt',{text:'SHA-256 da máscara'}),node('dd',{text:(state.refinementId?state.metrics?.mask_sha256:report.mask_sha256)||'Indisponível'}));
     const links=node('nav',{className:'morfo-artifacts','aria-label':'Artefatos da execução'});
     for(const [kind,label] of [['mask','Máscara PNG'],['overlay','Sobreposição PNG'],['report','Relatório JSON']]){
-      const a=node('a',{href:artifactPath(state.imageId,run.id,kind),text:label});
+      const href=state.refinementId&&kind!=='report'?`/api/v1/refinements/${encodeURIComponent(state.refinementId)}/${kind}`:artifactPath(state.imageId,run.id,kind);
+      const a=node('a',{href,text:label});
       a.target='_blank';a.rel='noopener';links.append(a);
     }
     const metrics=renderMetrics();
@@ -130,7 +133,8 @@
     }section.append(table);
     if(m.diameter_classes?.length){const histogram=node('div',{className:'diameter-histogram'});histogram.append(node('strong',{text:'Comprimento por classe de diâmetro'}));for(const item of m.diameter_classes){const label=`${fmt(item.lower_bound,2)}–${item.upper_bound==null?'∞':fmt(item.upper_bound,2)} ${m.diameter_unit}`;const row=node('div',{className:'diameter-bin'});row.append(node('span',{text:label}),node('i',{'aria-hidden':'true'}),node('b',{text:`${fmt(item.percent,1)}%`}));row.querySelector('i').style.setProperty('--diameter-percent',`${Math.max(0,Math.min(100,item.percent))}%`);histogram.append(row);}section.append(histogram);}
     const exports=node('nav',{className:'root-metrics-exports','aria-label':'Exportar dados morfométricos'});
-    for(const [format,label] of [['csv','Exportar CSV'],['json','Exportar JSON']])exports.append(node('a',{href:metricsExportPath(state.imageId,state.run.id,format),download:`morfo-morfometria-${state.run.id}.${format}`,text:label}));
+    if(state.refinementId)exports.append(node('a',{href:`/api/v1/root-metrics/${encodeURIComponent(m.id)}`,download:`morfo-morfometria-${state.refinementId}.json`,text:'Exportar JSON'}));
+    else for(const [format,label] of [['csv','Exportar CSV'],['json','Exportar JSON']])exports.append(node('a',{href:metricsExportPath(state.imageId,state.run.id,format),download:`morfo-morfometria-${state.run.id}.${format}`,text:label}));
     section.append(exports);
     const catalog=node('button',{type:'button',className:'metric-open-catalog',text:'Abrir no catálogo de análises →'});catalog.addEventListener('click',()=>{document.getElementById('close-inspect')?.click();document.querySelector('[data-view="analises"]')?.click();});section.append(catalog);
     const record=node('form',{className:'metric-record-form'});record.innerHTML=`<label>Estado<select id="metric-record-status"><option>NOT_VALIDATED</option><option>REVIEWED</option><option>ARCHIVED</option></select></label><label>Notas<input id="metric-record-notes" maxlength="2000" value=""></label><button type="submit">Salvar registro</button><button type="button" class="metric-delete">Excluir</button>`;
@@ -144,12 +148,19 @@
     if((x&&!y)||(!x&&y)){message('Informe ambas escalas X e Y, ou deixe ambas vazias.','error');return;}
     const submitter=event.submitter;state.busy=true;if(submitter)submitter.disabled=true;message('Calculando área, ocupação e componentes na resolução original...');
     const selected=state.calibrations.find(item=>item.id===$('metric-calibration').value);const bins=x?$('metric-diameter-bins').value.split(',').map(value=>Number(value.trim())).filter(Number.isFinite):[];
-    try{const response=await json(metricsPath(state.imageId,state.run.id),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scale_x:x?Number(x):null,scale_y:y?Number(y):null,diameter_bins:bins,origin:selected?.source_type||(x?'MANUAL':''),method:selected?.method||(x?'manual':''),date:new Date().toISOString(),version:selected?.version||'ui-001c',responsible:selected?.responsible||''})});state.metrics=response.data;await loadMetricLists();renderPanel();message('Morfometria Gate 001C calculada e persistida.');}
+    try{const response=await json(activeMetricsPath(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scale_x:x?Number(x):null,scale_y:y?Number(y):null,diameter_bins:bins,origin:selected?.source_type||(x?'MANUAL':''),method:selected?.method||(x?'manual':''),date:new Date().toISOString(),version:selected?.version||'ui-001c',responsible:selected?.responsible||''})});state.metrics=response.data;await loadMetricLists();renderPanel();message(`Morfometria Gate 001C calculada sobre ${state.refinementId?'máscara refinada consolidada':'máscara EXP-003'}.`);}
     catch(error){message(`Falha na morfometria: ${error.message}`,'error');}
     finally{state.busy=false;if(submitter&&submitter.isConnected)submitter.disabled=false;}
   }
 
-  async function loadMetricLists(){if(!state.imageId||!state.run)return;const [runs,calibrations]=await Promise.all([json(`${metricsPath(state.imageId,state.run.id)}/runs`),json(calibrationPath(state.imageId))]);state.metricRuns=runs.data||[];state.calibrations=calibrations.data||[];}
+  async function loadMetricLists(){if(!state.imageId||!state.run)return;const runsPath=state.refinementId?`${refinementMetricsPath(state.refinementId)}/runs`:`${metricsPath(state.imageId,state.run.id)}/runs`;const [runs,calibrations]=await Promise.all([json(runsPath),json(calibrationPath(state.imageId))]);state.metricRuns=runs.data||[];state.calibrations=calibrations.data||[];}
+
+  async function loadRefinementMetrics(refinementId){
+    let response=await json(refinementMetricsPath(refinementId));
+    if(!response.data)response=await json(refinementMetricsPath(refinementId),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scale_x:null,scale_y:null,diameter_bins:[],origin:'',method:'',date:new Date().toISOString(),version:'auto-refinement-001c',responsible:''})});
+    if(refinementId!==state.refinementId)return;
+    state.metrics=response.data;await loadMetricLists();renderPanel();
+  }
   async function loadMetricRun(id){try{const response=await json(`/api/v1/root-metrics/${encodeURIComponent(id)}`);state.metrics=response.data;renderPanel();}catch(error){message(`Falha ao abrir registro: ${error.message}`,'error');}}
   async function updateMetricRecord(event){event.preventDefault();try{const response=await json(`/api/v1/root-metrics/${encodeURIComponent(state.metrics.id)}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:$('metric-record-status').value,notes:$('metric-record-notes').value})});state.metrics=response.data;await loadMetricLists();renderPanel();message('Registro morfométrico atualizado.');}catch(error){message(`Falha ao atualizar: ${error.message}`,'error');}}
   async function deleteMetricRecord(){if(!state.metrics||!confirm('Excluir esta execução morfométrica do histórico ativo?'))return;try{await json(`/api/v1/root-metrics/${encodeURIComponent(state.metrics.id)}`,{method:'DELETE'});state.metrics=null;await loadMetricLists();if(state.metricRuns.length)await loadMetricRun(state.metricRuns[0].id);else renderPanel();message('Execução removida do histórico ativo.');}catch(error){message(`Falha ao excluir: ${error.message}`,'error');}}
@@ -232,7 +243,7 @@
     if(epoch!==state.generation)return false;
     const saved=(response.data||[]).find(item=>item.status==='CONFIRMED'&&item.base_profile_run_id===baseRunId&&(!state.imageMeta?.sha256||item.original_sha256===state.imageMeta.sha256));
     if(!saved)return false;
-    state.refinementId=saved.id;state.layer='overlay';showLayer('overlay');
+    state.refinementId=saved.id;state.layer='overlay';showLayer('overlay');await loadRefinementMetrics(saved.id);
     message(`Refinamento confirmado restaurado · revisão ${saved.revision_ordinal} · máscara consolidada ativa.`);
     return true;
   }
@@ -355,6 +366,6 @@
     build();verifyRegistry();
     window.addEventListener('morfo:image-opened',onImageOpened);
     window.addEventListener('morfo:image-closed',onImageClosed);
-    window.addEventListener('morfo:refinement-confirmed',event=>{const id=event.detail?.sessionId;if(!id||!state.imageId)return;state.refinementId=id;state.layer='overlay';if(layer){layer.src=`/api/v1/refinements/${encodeURIComponent(id)}/overlay?t=${Date.now()}`;layer.classList.remove('hidden');layer.style.opacity=String(state.opacity);}refreshLayers();message('Refinamento confirmado · máscara consolidada ativa. Use Máscara binária ou Sobreposição para inspecionar.');});
+    window.addEventListener('morfo:refinement-confirmed',async event=>{const id=event.detail?.sessionId;if(!id||!state.imageId)return;state.refinementId=id;state.layer='overlay';if(layer){layer.src=`/api/v1/refinements/${encodeURIComponent(id)}/overlay?t=${Date.now()}`;layer.classList.remove('hidden');layer.style.opacity=String(state.opacity);}refreshLayers();message('Refinamento confirmado · calculando morfometria consolidada...');try{await loadRefinementMetrics(id);if(id===state.refinementId)message('Refinamento confirmado · máscara e morfometria consolidadas ativas.');}catch(error){message(`Refinamento confirmado; falha na morfometria: ${error.message}`,'error');}});
   });
 })();

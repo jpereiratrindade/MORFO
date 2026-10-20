@@ -485,6 +485,19 @@ def main():
             assert status == 200 and branch_mask == mask_data
             status, body, _ = req(base+f'/api/v1/refinements/{branch_id}/confirm','POST',b'',auth_headers)
             assert status == 200 and json.loads(body)['data']['status'] == 'CONFIRMED'
+            status, body, _ = req(base+f'/api/v1/refinements/{branch_id}/metrics','GET',headers=auth_headers)
+            assert status == 200 and json.loads(body)['data'] is None
+            status, body, _ = req(base+f'/api/v1/refinements/{branch_id}/metrics','POST',json.dumps({'scale_x':None,'scale_y':None,'diameter_bins':[]}).encode(),{'Content-Type':'application/json',**auth_headers})
+            refined_metrics=json.loads(body)['data']
+            assert status == 201 and refined_metrics['profile_run_id'] == branch_id,(status,body)
+            status, body, _ = req(base+f'/api/v1/refinements/{branch_id}/metrics',headers=auth_headers)
+            assert status == 200 and json.loads(body)['data']['id'] == refined_metrics['id']
+            status, body, _ = req(base+f'/api/v1/refinements/{branch_id}/metrics/runs',headers=auth_headers)
+            assert status == 200 and json.loads(body)['data'][0]['id'] == refined_metrics['id']
+            db=sqlite3.connect(Path(temp)/'morfo.sqlite3')
+            metric_row=db.execute('SELECT refinement_id,mask_sha256 FROM morfo_root_metric_runs WHERE id=?',(refined_metrics['id'],)).fetchone()
+            refined_mask_sha=db.execute('SELECT r.mask_sha256 FROM morfo_refinement_sessions s JOIN morfo_refinement_revisions r ON r.id=s.current_revision_id WHERE s.id=?',(branch_id,)).fetchone()[0]
+            db.close(); assert metric_row == (branch_id,refined_mask_sha),metric_row
 
             # 7. Multi-user isolation verification (User 2)
             email2 = 'pesquisador2@embrapa.br'

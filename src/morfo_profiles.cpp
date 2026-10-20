@@ -27,6 +27,7 @@ void create_schema(sqlite3* db) {
  CREATE TABLE IF NOT EXISTS morfo_root_metric_runs (
   id TEXT PRIMARY KEY,
   profile_run_id TEXT NOT NULL REFERENCES morfo_profile_runs(id),
+  refinement_id TEXT REFERENCES morfo_refinement_sessions(id),
   image_id TEXT NOT NULL REFERENCES images(id),
   user_id TEXT NOT NULL REFERENCES users(id),
   metrics_version TEXT NOT NULL,
@@ -122,6 +123,10 @@ void create_schema(sqlite3* db) {
  if(!has_column("morfo_refinement_sessions","source_refinement_id")){
   if(sqlite3_exec(db,"ALTER TABLE morfo_refinement_sessions ADD COLUMN source_refinement_id TEXT REFERENCES morfo_refinement_sessions(id)",nullptr,nullptr,&error)!=SQLITE_OK){std::string message=error?error:"schema alter error";sqlite3_free(error);throw std::runtime_error("MORFO profile schema: "+message);}
  }
+ if(!has_column("morfo_root_metric_runs","refinement_id")){
+  if(sqlite3_exec(db,"ALTER TABLE morfo_root_metric_runs ADD COLUMN refinement_id TEXT REFERENCES morfo_refinement_sessions(id)",nullptr,nullptr,&error)!=SQLITE_OK){std::string message=error?error:"schema alter error";sqlite3_free(error);throw std::runtime_error("MORFO profile schema: "+message);}
+ }
+ sqlite3_exec(db,"CREATE INDEX IF NOT EXISTS idx_morfo_root_metric_runs_refinement ON morfo_root_metric_runs(refinement_id,created_at DESC)",nullptr,nullptr,nullptr);
  for(const auto& [column,definition]:std::initializer_list<std::pair<const char*,const char*>>{{"status","TEXT NOT NULL DEFAULT 'NOT_VALIDATED'"},{"notes","TEXT NOT NULL DEFAULT ''"},{"deleted_at","TEXT"}})
   if(!has_column("morfo_root_metric_runs",column)){
    const std::string alter="ALTER TABLE morfo_root_metric_runs ADD COLUMN "+std::string(column)+" "+definition;

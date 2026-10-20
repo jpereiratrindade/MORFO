@@ -35,6 +35,11 @@ Os parâmetros são: `score_threshold`, `brightness_threshold`,
 - `GET /api/v1/refinements/{id}/before` e `/difference` — máscara anterior e
   mapa RGB da última mudança (verde adicionado, vermelho removido).
 - `GET /api/v1/refinements/{id}/metadata` — metadados JSON reproduzíveis.
+- `POST /api/v1/refinements/{id}/metrics` — calcula e persiste morfometria sobre
+  a máscara consolidada de uma sessão `CONFIRMED`; aceita o mesmo corpo de
+  calibração da morfometria EXP-003.
+- `GET /api/v1/refinements/{id}/metrics` — devolve a morfometria consolidada mais
+  recente. `GET .../metrics/runs` lista seu histórico isolado da máscara-base.
 
 Corpo de intervenção retangular:
 
@@ -55,3 +60,8 @@ Para `polygon` ou `brush`, `points` é vetor plano nas coordenadas do original:
 Cada revisão registra algoritmo/versão da sessão, parâmetros efetivos, seleção,
 revisão anterior, ordem, data, hashes da máscara, pixels adicionados/removidos e
 SHA-256 imutável do original.
+
+Execuções morfométricas refinadas guardam `refinement_id`, SHA-256 da revisão
+confirmada e versão do algoritmo morfométrico. Assim, recarregar a imagem restaura
+camada e medidas da mesma máscara; métricas da máscara EXP-003 original não são
+misturadas no histórico refinado.
