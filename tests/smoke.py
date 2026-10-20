@@ -477,6 +477,14 @@ def main():
             assert status == 200 and listed_refinements[0]['id'] == refinement_id and listed_refinements[0]['status'] == 'CONFIRMED'
             status, body, _ = req(base+f'/api/v1/refinements/{refinement_id}/interventions','POST',json.dumps(include).encode(),{'Content-Type':'application/json',**auth_headers})
             assert status == 404, (status, body)
+            status, body, _ = req(base+f'/api/v1/images/{analysis_image_id}/refinements','POST',json.dumps({'base_profile_run_id':profile_id,'source_refinement_id':refinement_id}).encode(),{'Content-Type':'application/json',**auth_headers})
+            assert status == 201, (status, body)
+            branch_id=json.loads(body)['data']['id']
+            assert json.loads(body)['data']['source_refinement_id'] == refinement_id
+            status, branch_mask, _ = req(base+f'/api/v1/refinements/{branch_id}/mask',headers=auth_headers)
+            assert status == 200 and branch_mask == mask_data
+            status, body, _ = req(base+f'/api/v1/refinements/{branch_id}/confirm','POST',b'',auth_headers)
+            assert status == 200 and json.loads(body)['data']['status'] == 'CONFIRMED'
 
             # 7. Multi-user isolation verification (User 2)
             email2 = 'pesquisador2@embrapa.br'
@@ -573,7 +581,7 @@ def main():
             restored_refinement=json.loads(body)['data']
             assert status==200 and restored_refinement['status']=='CONFIRMED' and restored_refinement['current_revision_id']==latest_id and len(restored_refinement['revisions'])==3,(status,body)
             status,body,_=req(base+f'/api/v1/images/{analysis_image_id}/refinements',headers=restarted_headers1)
-            assert status==200 and json.loads(body)['data'][0]['id']==refinement_id,(status,body)
+            assert status==200 and json.loads(body)['data'][0]['id']==branch_id and json.loads(body)['data'][0]['source_refinement_id']==refinement_id,(status,body)
             status,body,_=req(base+'/api/v1/parameter-presets',headers=restarted_headers1)
             assert status==200 and any(item['id']==preset_id for item in json.loads(body)['data'])
 
