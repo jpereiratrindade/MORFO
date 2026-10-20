@@ -13,3 +13,4 @@
 
 # Safe local backups of UX hotfixes
 /.morfo-backups/
+*.patch

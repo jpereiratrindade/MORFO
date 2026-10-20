@@ -30,6 +30,7 @@
 #include "morfo_profiles.hpp"
 #include "morfo_root_metrics.hpp"
 #include "regional_refinement.hpp"
+#include "oidc.hpp"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -72,7 +73,15 @@ constexpr int TILE_SIZE=256;
 constexpr const char* PIPELINE="rizoma-exp004-progressive-0.4.0";
 struct Failure : std::runtime_error {using std::runtime_error::runtime_error;};
 struct Raster {int w=0,h=0;std::vector<unsigned char> rgba;};
-struct App {fs::path root,web; std::string host="0.0.0.0"; unsigned short port=8091; std::atomic<int>active{0};};
+struct App {
+ fs::path root,web;
+ std::string host="0.0.0.0";
+ unsigned short port=8091;
+ std::atomic<int>active{0};
+ morfo::oidc::OidcConfig oidc_config;
+ morfo::oidc::OidcTransactionManager oidc_tx_mgr;
+ morfo::oidc::JwksKeyStore jwks_keystore;
+};
 static std::string utc_offset(int seconds){auto t=std::time(nullptr)+seconds; std::tm v{};gmtime_r(&t,&v);char buf[32];std::strftime(buf,sizeof(buf),"%Y-%m-%dT%H:%M:%SZ",&v);return buf;}
 [[maybe_unused]] static std::string utc(){return utc_offset(0);}
 static std::string esc(std::string_view s){std::string out;out.reserve(s.size()+8);for(unsigned char c:s){switch(c){case '"':out+="\\\"";break;case '\\':out+="\\\\";break;case '\n':out+="\\n";break;case '\r':out+="\\r";break;case '\t':out+="\\t";break;default:if(c<32){char b[7];std::snprintf(b,sizeof(b),"\\u%04x",c);out+=b;}else out+=char(c);}}return out;}
@@ -954,6 +963,15 @@ using Response=http::response<http::string_body>;
 static Response respond(http::status s,unsigned version,std::string body,std::string mime="application/json; charset=utf-8"){
  Response r{s,version};r.set(http::field::server,"MORFO/0.1.0");r.set(http::field::content_type,mime);r.set(http::field::cache_control,"no-store");r.set("X-Content-Type-Options","nosniff");r.set("X-Frame-Options","DENY");r.set("Referrer-Policy","no-referrer");r.set("Content-Security-Policy","default-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");r.keep_alive(false);r.body()=std::move(body);r.prepare_payload();return r;}
 static Response problem(unsigned ver,http::status s,const std::string& msg){return respond(s,ver,"{\"error\":\""+esc(msg)+"\"}");}
+static Response redirect_found(unsigned ver,const std::string& location){
+ Response r{http::status::found,ver};
+ r.set(http::field::server,"MORFO/0.1.0");
+ r.set(http::field::location,location);
+ r.set(http::field::cache_control,"no-store");
+ r.keep_alive(false);
+ r.prepare_payload();
+ return r;
+}
 static bool valid_id(std::string s){return s.size()==24&&std::all_of(s.begin(),s.end(),[](char c){return(c>='a'&&c<='f')||(c>='0'&&c<='9');});}
 
 static std::string extract_token(const http::request<http::string_body>& req){
@@ -1315,11 +1333,165 @@ static Response handle(const App& app,const http::request<http::string_body>& re
  if(req.method()==http::verb::get&&p=="/api/v1/health")return respond(http::status::ok,v,"{\"status\":\"ok\",\"name\":\"RIZOMA\",\"version\":\"0.2.0\",\"scope\":\"local-image-intake\"}");
 
  // Auth endpoints
+ if(req.method()==http::verb::get&&p=="/api/v1/auth/providers"){
+  const char* host_env=std::getenv("MORFO_SMTP_HOST");
+  bool is_smtp=(host_env!=nullptr&&*host_env!='\0');
+  bool is_otp=is_smtp||!app.oidc_config.dev_otp_disabled;
+  std::ostringstream o;
+  o<<"{\"google_enabled\":"<<(app.oidc_config.enabled()?"true":"false")
+   <<",\"email_otp_enabled\":"<<(is_otp?"true":"false")<<"}";
+  return respond(http::status::ok,v,o.str());
+ }
+ if(req.method()==http::verb::get&&p=="/api/v1/auth/google/start"){
+  if(!app.oidc_config.enabled()){
+   return problem(v,http::status::not_found,"Google OIDC não está configurado neste servidor.");
+  }
+  std::string state=morfo::oidc::random_string(24);
+  std::string nonce=morfo::oidc::random_string(24);
+  std::string correlation_id=morfo::oidc::random_string(12);
+  std::string code_verifier=morfo::oidc::generate_pkce_verifier();
+  std::string code_challenge=morfo::oidc::pkce_code_challenge(code_verifier);
+
+  const_cast<App&>(app).oidc_tx_mgr.store({state,nonce,code_verifier,correlation_id,std::chrono::steady_clock::now()});
+
+  std::ostringstream auth_url;
+  auth_url<<app.oidc_config.auth_endpoint
+          <<"?client_id="<<app.oidc_config.client_id
+          <<"&response_type=code"
+          <<"&scope=openid%20email%20profile"
+          <<"&redirect_uri="<<app.oidc_config.redirect_uri
+          <<"&state="<<state
+          <<"&nonce="<<nonce
+          <<"&code_challenge="<<code_challenge
+          <<"&code_challenge_method=S256"
+          <<"&prompt=select_account";
+
+  auto r=redirect_found(v,auth_url.str());
+  bool is_https=(req.find("X-Forwarded-Proto")!=req.end()&&req["X-Forwarded-Proto"]=="https");
+  std::string cookie="morfo_oidc_state="+state+"; Path=/api/v1/auth/google/; HttpOnly; SameSite=Lax; Max-Age=600";
+  if(is_https)cookie+="; Secure";
+  r.set(http::field::set_cookie,cookie);
+  return r;
+ }
+ if(req.method()==http::verb::get&&p=="/api/v1/auth/google/callback"){
+  if(!app.oidc_config.enabled()){
+   return problem(v,http::status::not_found,"Google OIDC não está configurado.");
+  }
+  std::string err=args["error"];
+  if(!err.empty()){
+   Db db(app.root/"morfo.sqlite3");
+   morfo::oidc::record_audit_event(db.p,"","","OIDC_AUTH_ERROR",err,"GOOGLE_CALLBACK","");
+   return redirect_found(v,"/?auth_error="+err);
+  }
+  std::string state=args["state"];
+  std::string code=args["code"];
+  if(state.empty()||code.empty()){
+   return redirect_found(v,"/?auth_error=missing_code_or_state");
+  }
+
+  std::string cookie_state;
+  if(auto it=req.find(http::field::cookie);it!=req.end()){
+   std::string cookies(it->value());
+   std::string prefix="morfo_oidc_state=";
+   auto pos=cookies.find(prefix);
+   if(pos!=std::string::npos){
+    auto start=pos+prefix.size();
+    auto end=cookies.find(';',start);
+    cookie_state=cookies.substr(start,end==std::string::npos?std::string::npos:end-start);
+   }
+  }
+  if(!cookie_state.empty()&&cookie_state!=state){
+   return redirect_found(v,"/?auth_error=state_cookie_mismatch");
+  }
+
+  auto tx=const_cast<App&>(app).oidc_tx_mgr.take(state);
+  if(!tx){
+   return redirect_found(v,"/?auth_error=invalid_or_expired_state");
+  }
+
+  std::string token_response;
+  try{
+   token_response=morfo::oidc::exchange_code_for_tokens(app.oidc_config,code,tx->code_verifier);
+  }catch(const std::exception& e){
+   Db db(app.root/"morfo.sqlite3");
+   morfo::oidc::record_audit_event(db.p,"","","OIDC_TOKEN_EXCHANGE_FAILED",e.what(),"TOKEN_ENDPOINT",tx->correlation_id);
+   return redirect_found(v,"/?auth_error=token_exchange_failed");
+  }
+
+  std::string id_token=json_extract_string(token_response,"id_token");
+  if(id_token.empty()){
+   return redirect_found(v,"/?auth_error=missing_id_token");
+  }
+
+  morfo::oidc::IdTokenClaims claims;
+  try{
+   claims=morfo::oidc::parse_and_validate_id_token(id_token,app.oidc_config,tx->nonce,const_cast<App&>(app).jwks_keystore);
+  }catch(const std::exception& e){
+   Db db(app.root/"morfo.sqlite3");
+   morfo::oidc::record_audit_event(db.p,"","","OIDC_TOKEN_VALIDATION_FAILED",e.what(),"JOSE_VALIDATION",tx->correlation_id);
+   return redirect_found(v,"/?auth_error="+morfo::oidc::url_encode(e.what()));
+  }
+
+  Db db(app.root/"morfo.sqlite3");
+  auto link=morfo::oidc::find_identity_link(db.p,claims.iss,claims.sub);
+
+  bool is_https=(req.find("X-Forwarded-Proto")!=req.end()&&req["X-Forwarded-Proto"]=="https");
+
+  if(!link){
+   auto pending_link=morfo::oidc::create_pending_link(db.p,claims.iss,claims.sub,claims.email,claims.name,claims.hd,tx->correlation_id);
+   auto r=redirect_found(v,"/?auth_status=pending&email="+morfo::oidc::url_encode(claims.email));
+   r.set(http::field::set_cookie,"morfo_oidc_state=; Path=/api/v1/auth/google/; Max-Age=0");
+   return r;
+  }
+
+  if(link->state=="PENDING"){
+   morfo::oidc::record_audit_event(db.p,link->user_id,link->id,"OIDC_LOGIN_PENDING","DENY_PENDING","OIDC_LINK",tx->correlation_id);
+   auto r=redirect_found(v,"/?auth_status=pending&email="+morfo::oidc::url_encode(claims.email));
+   r.set(http::field::set_cookie,"morfo_oidc_state=; Path=/api/v1/auth/google/; Max-Age=0");
+   return r;
+  }
+
+  if(link->state=="REVOKED"){
+   morfo::oidc::record_audit_event(db.p,link->user_id,link->id,"OIDC_LOGIN_REVOKED","DENY_REVOKED","OIDC_LINK",tx->correlation_id);
+   auto r=redirect_found(v,"/?auth_status=revoked");
+   r.set(http::field::set_cookie,"morfo_oidc_state=; Path=/api/v1/auth/google/; Max-Age=0");
+   return r;
+  }
+
+  if(link->state=="ACTIVE"){
+   if(link->email_at_link!=claims.email&&!claims.email.empty()){
+    morfo::oidc::update_link_email(db.p,link->id,claims.email,tx->correlation_id);
+   }
+   std::string session_token=rand_session_token();
+   std::string session_exp=utc_offset(7*24*3600);
+   std::string now=utc_offset(0);
+   Stmt sins(db.p,"INSERT INTO sessions(token, user_id, email, created_at, expires_at) VALUES(?,?,?,?,?)");
+   sins.bind(1,session_token);sins.bind(2,link->user_id);sins.bind(3,claims.email);sins.bind(4,now);sins.bind(5,session_exp);
+   sqlite3_step(sins.p);
+
+   morfo::oidc::record_audit_event(db.p,link->user_id,link->id,"OIDC_LOGIN_SUCCESS","ALLOW","OIDC_SESSION",tx->correlation_id);
+
+   auto r=redirect_found(v,"/?auth=success");
+   std::string cookie_val="morfo_session="+session_token+"; Path=/; HttpOnly; SameSite=Lax";
+   if(is_https)cookie_val+="; Secure";
+   r.set(http::field::set_cookie,cookie_val);
+   return r;
+  }
+
+  return redirect_found(v,"/?auth_error=unexpected_state");
+ }
  if(req.method()==http::verb::get&&p=="/api/v1/auth/me"){
   auto user=authenticate(app,req);
   if(!user)return respond(http::status::ok,v,"{\"authenticated\":false}");
   std::ostringstream o;
-  o<<"{\"authenticated\":true,\"user\":{\"id\":"<<q(user->id)<<",\"email\":"<<q(user->email)<<",\"name\":"<<q(user->name)<<"}}";
+  o<<"{\"authenticated\":true,\"user\":{\"id\":"<<q(user->id)<<",\"email\":"<<q(user->email)<<",\"name\":"<<q(user->name);
+  Db db(app.root/"morfo.sqlite3");
+  Stmt lst(db.p,"SELECT provider, state FROM identity_links WHERE user_id=? AND state='ACTIVE' LIMIT 1");
+  lst.bind(1,user->id);
+  if(sqlite3_step(lst.p)==SQLITE_ROW){
+   o<<",\"provider\":"<<q(col(lst.p,0));
+  }
+  o<<"}}";
   return respond(http::status::ok,v,o.str());
  }
  if(req.method()==http::verb::post&&p=="/api/v1/auth/request-code"){
@@ -1340,7 +1512,8 @@ static Response handle(const App& app,const http::request<http::string_body>& re
   std::string err;
   send_email_code(email,code,err);
   const char* host_env=std::getenv("MORFO_SMTP_HOST");
-  bool is_dev=(host_env==nullptr||*host_env=='\0');
+  bool is_smtp=(host_env!=nullptr&&*host_env!='\0');
+  bool is_dev=!is_smtp&&!app.oidc_config.dev_otp_disabled;
   std::ostringstream resp;
   resp<<"{\"status\":\"ok\",\"message\":\"Chave de acesso enviada para "<<esc(email)<<".\"";
   if(is_dev)resp<<",\"dev_code\":"<<q(code);
@@ -1404,7 +1577,10 @@ static Response handle(const App& app,const http::request<http::string_body>& re
   resp<<"{\"status\":\"ok\",\"session_token\":"<<q(session_token)
       <<",\"user\":{\"id\":"<<q(user_id)<<",\"email\":"<<q(email)<<",\"name\":"<<q(user_name)<<"}}";
   auto r=respond(http::status::ok,v,resp.str());
-  r.set(http::field::set_cookie,"morfo_session="+session_token+"; Path=/; HttpOnly; SameSite=Lax");
+  bool is_https=(req.find("X-Forwarded-Proto")!=req.end()&&req["X-Forwarded-Proto"]=="https");
+  std::string cookie_val="morfo_session="+session_token+"; Path=/; HttpOnly; SameSite=Lax";
+  if(is_https)cookie_val+="; Secure";
+  r.set(http::field::set_cookie,cookie_val);
   return r;
  }
  if(req.method()==http::verb::post&&p=="/api/v1/auth/logout"){
@@ -1654,9 +1830,90 @@ static void session(tcp::socket socket,App& app){
 }
 int main(int argc,char** argv){try{
  ::umask(0077);App app;app.root="./var";app.web="./web";bool migrate_only=false;
+ app.oidc_config = morfo::oidc::OidcConfig::from_environment();
  TIFFSetWarningHandler(nullptr);TIFFSetErrorHandler(nullptr);
- for(int i=1;i<argc;i++){std::string a=argv[i];if(a=="--data-dir"&&i+1<argc)app.root=argv[++i];else if(a=="--web-dir"&&i+1<argc)app.web=argv[++i];else if(a=="--host"&&i+1<argc)app.host=argv[++i];else if(a=="--port"&&i+1<argc){int port=std::stoi(argv[++i]);if(port<1024||port>65535)throw Failure("Port out of range");app.port=static_cast<unsigned short>(port);}else if(a=="--migrate-only")migrate_only=true;else throw Failure("Usage: rizoma-server [--host IP] [--data-dir DIRECTORY] [--web-dir DIRECTORY] [--port 1024..65535] [--migrate-only]");}
- initialize(app);if(migrate_only){std::cout<<"RIZOMA SQLite migrations complete\n";return 0;}asio::io_context io;
+ std::string action;
+ std::string link_id;
+ std::string target_user_id;
+ for(int i=1;i<argc;i++){
+  std::string a=argv[i];
+  if(a=="--data-dir"&&i+1<argc)app.root=argv[++i];
+  else if(a=="--web-dir"&&i+1<argc)app.web=argv[++i];
+  else if(a=="--host"&&i+1<argc)app.host=argv[++i];
+  else if(a=="--port"&&i+1<argc){int port=std::stoi(argv[++i]);if(port<1024||port>65535)throw Failure("Port out of range");app.port=static_cast<unsigned short>(port);}
+  else if(a=="--migrate-only")migrate_only=true;
+  else if(a=="--google-client-id"&&i+1<argc)app.oidc_config.client_id=argv[++i];
+  else if(a=="--google-client-secret"&&i+1<argc)app.oidc_config.client_secret=argv[++i];
+  else if(a=="--google-redirect-uri"&&i+1<argc)app.oidc_config.redirect_uri=argv[++i];
+  else if(a=="--list-identity-links")action="list-links";
+  else if(a=="--approve-identity-link"&&i+1<argc){action="approve-link";link_id=argv[++i];}
+  else if(a=="--link-identity"&&i+1<argc){action="link-identity";link_id=argv[++i];}
+  else if(a=="--user-id"&&i+1<argc)target_user_id=argv[++i];
+  else if(a=="--revoke-identity-link"&&i+1<argc){action="revoke-link";link_id=argv[++i];}
+  else throw Failure("Usage: morfo-server [--host IP] [--data-dir DIRECTORY] [--web-dir DIRECTORY] [--port 1024..65535] [--migrate-only] [--list-identity-links] [--approve-identity-link LINK_ID] [--link-identity LINK_ID --user-id USER_ID] [--revoke-identity-link LINK_ID]");
+ }
+ if(app.oidc_config.enabled()){
+  app.oidc_config.dev_otp_disabled=true;
+ }
+ initialize(app);
+ if(migrate_only){std::cout<<"RIZOMA SQLite migrations complete\n";return 0;}
+
+ if(action=="list-links"){
+  Db db(app.root/"morfo.sqlite3");
+  auto links=morfo::oidc::list_identity_links(db.p);
+  std::cout<<std::left<<std::setw(16)<<"LINK_ID"
+            <<std::setw(16)<<"USER_ID"
+            <<std::setw(10)<<"STATE"
+            <<std::setw(32)<<"EMAIL"
+            <<std::setw(28)<<"ISSUER"
+            <<"SUBJECT\n";
+  std::cout<<std::string(120,'-')<<"\n";
+  for(const auto& l:links){
+   std::cout<<std::left<<std::setw(16)<<l.id
+             <<std::setw(16)<<l.user_id
+             <<std::setw(10)<<l.state
+             <<std::setw(32)<<l.email_at_link
+             <<std::setw(28)<<l.issuer
+             <<l.subject<<"\n";
+  }
+  return 0;
+ }
+ if(action=="approve-link"){
+  Db db(app.root/"morfo.sqlite3");
+  std::string cid=morfo::oidc::random_string(12);
+  if(morfo::oidc::approve_identity_link(db.p,link_id,cid)){
+   std::cout<<"Identity link "<<link_id<<" approved successfully (state=ACTIVE)\n";
+   return 0;
+  }
+  std::cerr<<"Error: Identity link "<<link_id<<" not found or could not be approved\n";
+  return 1;
+ }
+ if(action=="link-identity"){
+  if(target_user_id.empty()){
+   std::cerr<<"Error: --link-identity requires --user-id USER_ID\n";
+   return 1;
+  }
+  Db db(app.root/"morfo.sqlite3");
+  std::string cid=morfo::oidc::random_string(12);
+  if(morfo::oidc::link_identity_to_user(db.p,link_id,target_user_id,cid)){
+   std::cout<<"Identity link "<<link_id<<" linked to user "<<target_user_id<<" (state=ACTIVE)\n";
+   return 0;
+  }
+  std::cerr<<"Error: Failed to link identity "<<link_id<<" to user "<<target_user_id<<" (verify link and user exist)\n";
+  return 1;
+ }
+ if(action=="revoke-link"){
+  Db db(app.root/"morfo.sqlite3");
+  std::string cid=morfo::oidc::random_string(12);
+  if(morfo::oidc::revoke_identity_link(db.p,link_id,cid)){
+   std::cout<<"Identity link "<<link_id<<" revoked (state=REVOKED)\n";
+   return 0;
+  }
+  std::cerr<<"Error: Identity link "<<link_id<<" not found or could not be revoked\n";
+  return 1;
+ }
+
+ asio::io_context io;
  boost::system::error_code ec;auto addr=asio::ip::make_address(app.host,ec);
  if(ec)throw Failure("Invalid IP address for --host: "+app.host);
  tcp::acceptor acceptor(io,{addr,app.port});

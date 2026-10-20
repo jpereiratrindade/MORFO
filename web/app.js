@@ -107,11 +107,62 @@ function updateUserUI(){
     chip.classList.remove('hidden');
     $('user-avatar').textContent = getInitials(currentUser.name, currentUser.email);
     $('user-email').textContent = currentUser.email;
-    $('user-email').title = currentUser.name ? `${currentUser.name} (${currentUser.email})` : currentUser.email;
-    if(opEmail) opEmail.textContent = currentUser.email;
+    const providerBadge = currentUser.provider ? ` [${currentUser.provider.toUpperCase()}]` : '';
+    $('user-email').title = (currentUser.name ? `${currentUser.name} (${currentUser.email})` : currentUser.email) + providerBadge;
+    if(opEmail) opEmail.textContent = currentUser.email + providerBadge;
   } else {
     chip.classList.add('hidden');
     if(opEmail) opEmail.textContent = 'Não autenticado';
+  }
+}
+
+async function updateAuthProvidersUI(){
+  try{
+    const res = await api('/api/v1/auth/providers');
+    const googleSec = $('auth-google-section');
+    const divider = $('auth-divider');
+    const emailForm = $('auth-email-form');
+    if(googleSec && !res.google_enabled){
+      googleSec.classList.add('hidden');
+    }
+    if(emailForm && !res.email_otp_enabled){
+      emailForm.classList.add('hidden');
+      if(divider) divider.classList.add('hidden');
+    }
+  }catch(_){}
+}
+
+function checkAuthUrlParams(){
+  const params = new URLSearchParams(window.location.search);
+  const statusBanner = $('auth-status-banner');
+  if(!statusBanner) return;
+
+  if(params.has('auth_status')){
+    const status = params.get('auth_status');
+    const email = params.get('email') || '';
+    if(status === 'pending'){
+      statusBanner.className = 'auth-status-banner warning';
+      statusBanner.innerHTML = `<strong>Vínculo Pendente:</strong> Sua conta Google institucional <em>(${h(email)})</em> foi autenticada no Google Workspace Embrapa. No entanto, o acesso ao acervo do MORFO aguarda aprovação administrativa local. Solicite a liberação ao administrador do sistema.`;
+      statusBanner.classList.remove('hidden');
+      showAuthOverlay();
+    } else if(status === 'revoked'){
+      statusBanner.className = 'auth-status-banner danger';
+      statusBanner.innerHTML = `<strong>Acesso Revogado:</strong> O vínculo desta conta Google com o MORFO foi revogado pela administração local.`;
+      statusBanner.classList.remove('hidden');
+      showAuthOverlay();
+    }
+  } else if(params.has('auth_error')){
+    const err = params.get('auth_error');
+    statusBanner.className = 'auth-status-banner danger';
+    let msg = 'Erro durante a autenticação federada.';
+    if(err === 'access_denied') msg = 'Consentimento de login não concedido.';
+    else if(err === 'invalid_id_token') msg = 'Falha na validação do token Google (domínio institucional ou assinatura inválida).';
+    else if(err === 'invalid_or_expired_state') msg = 'Sessão de autenticação expirada ou inválida. Tente novamente.';
+    statusBanner.innerHTML = `<strong>Falha de Autenticação:</strong> ${h(msg)} <small>(${h(err)})</small>`;
+    statusBanner.classList.remove('hidden');
+    showAuthOverlay();
+  } else if(params.get('auth') === 'success'){
+    window.history.replaceState({}, document.title, window.location.pathname);
   }
 }
 
@@ -126,6 +177,7 @@ function setAuthFeedback(msg, type = 'error'){
 function showAuthOverlay(infoMsg){
   $('auth-overlay').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
+  updateAuthProvidersUI();
   $('auth-email-form').classList.remove('hidden');
   $('auth-code-form').classList.add('hidden');
   $('auth-dev-preview').classList.add('hidden');
@@ -323,6 +375,7 @@ async function loadRootMetricRecords(){
 }
 
 async function refresh(){
+  checkAuthUrlParams();
   if(!currentUser){
     try{
       const auth = await api('/api/v1/auth/me');

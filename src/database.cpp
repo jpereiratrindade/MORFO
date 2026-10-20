@@ -13,7 +13,7 @@
 namespace rizoma::database {
 namespace {
 
-constexpr int latest_version=4;
+constexpr int latest_version=5;
 constexpr std::string_view migration_name="establish-v0.2.0-schema-and-history";
 // SHA-256 of the reviewed migration specification. Changing migration 1 requires
 // a new migration, never replacement of this checksum.
@@ -24,6 +24,8 @@ constexpr std::string_view learning_migration_name="learning-feedback-foundation
 constexpr std::string_view learning_migration_checksum="b4e514bc655bb36bf04a03c7a07dc0e39b0694140ac1c53a606d70a67fcaf6fe";
 constexpr std::string_view crud_migration_name="crud-soft-delete-and-lifecycle";
 constexpr std::string_view crud_migration_checksum="4a7e2b1c8f39501a9d8e7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f";
+constexpr std::string_view oidc_migration_name="identity-links-and-audit-foundation";
+constexpr std::string_view oidc_migration_checksum="515e374b2909b5190f85fb18da04ca4099762a1e12f32493566c6038bd104fe3";
 
 std::string sqlite_error(sqlite3* db,const std::string& context){
  return context+": "+(db?sqlite3_errmsg(db):"SQLite unavailable");
@@ -225,6 +227,39 @@ void apply_migration_4(sqlite3* db){
  )SQL");
 }
 
+void apply_migration_5(sqlite3* db){
+ execute(db,R"SQL(
+CREATE TABLE IF NOT EXISTS identity_links(
+ id TEXT PRIMARY KEY,
+ user_id TEXT NOT NULL REFERENCES users(id),
+ provider TEXT NOT NULL CHECK(provider IN ('google')),
+ issuer TEXT NOT NULL,
+ subject TEXT NOT NULL,
+ hosted_domain TEXT,
+ email_at_link TEXT,
+ state TEXT NOT NULL CHECK(state IN ('PENDING','ACTIVE','REVOKED')),
+ verified_at TEXT,
+ linked_at TEXT NOT NULL,
+ revoked_at TEXT,
+ UNIQUE(issuer, subject)
+);
+CREATE INDEX IF NOT EXISTS idx_identity_links_user ON identity_links(user_id);
+CREATE INDEX IF NOT EXISTS idx_identity_links_lookup ON identity_links(issuer, subject);
+CREATE TABLE IF NOT EXISTS identity_audit_events(
+ id TEXT PRIMARY KEY,
+ user_id TEXT,
+ link_id TEXT,
+ action TEXT NOT NULL,
+ occurred_at TEXT NOT NULL,
+ decision TEXT NOT NULL,
+ evidence_type TEXT NOT NULL,
+ correlation_id TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_identity_audit_user ON identity_audit_events(user_id);
+CREATE INDEX IF NOT EXISTS idx_identity_audit_link ON identity_audit_events(link_id);
+)SQL");
+}
+
 void verify_database(sqlite3* db){
  {
   Statement st(db,"PRAGMA integrity_check");
@@ -294,7 +329,7 @@ void migrate(const std::filesystem::path& file){
    version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL
   ))SQL");
   Statement known(db,"SELECT version,name,checksum FROM schema_migrations ORDER BY version");
-  bool applied=false,analysis_applied=false,learning_applied=false,crud_applied=false;
+  bool applied=false,analysis_applied=false,learning_applied=false,crud_applied=false,oidc_applied=false;
   while(sqlite3_step(known.get())==SQLITE_ROW){
    const int version=sqlite3_column_int(known.get(),0);
    if(version>latest_version)throw std::runtime_error("Database was migrated by a newer RIZOMA version");
@@ -318,10 +353,16 @@ void migrate(const std::filesystem::path& file){
     if(known.text(1)!=crud_migration_name||known.text(2)!=crud_migration_checksum)
      throw std::runtime_error("Migration 4 checksum or name does not match the application");
    }
+   if(version==5){
+    oidc_applied=true;
+    if(known.text(1)!=oidc_migration_name||known.text(2)!=oidc_migration_checksum)
+     throw std::runtime_error("Migration 5 checksum or name does not match the application");
+   }
   }
   if(analysis_applied&&!applied)throw std::runtime_error("Migration history is not contiguous");
   if(learning_applied&&!analysis_applied)throw std::runtime_error("Migration history is not contiguous");
   if(crud_applied&&!learning_applied)throw std::runtime_error("Migration history is not contiguous");
+  if(oidc_applied&&!crud_applied)throw std::runtime_error("Migration history is not contiguous");
   if(!applied){
    apply_migration_1(db);
    Statement record(db,"INSERT INTO schema_migrations(version,name,checksum,applied_at) VALUES(1,?,?,?)");
@@ -345,6 +386,12 @@ void migrate(const std::filesystem::path& file){
    Statement record(db,"INSERT INTO schema_migrations(version,name,checksum,applied_at) VALUES(4,?,?,?)");
    record.bind(1,std::string(crud_migration_name));record.bind(2,std::string(crud_migration_checksum));record.bind(3,utc_now());
    if(sqlite3_step(record.get())!=SQLITE_DONE)throw std::runtime_error(sqlite_error(db,"Cannot record migration 4"));
+  }
+  if(!oidc_applied){
+   apply_migration_5(db);
+   Statement record(db,"INSERT INTO schema_migrations(version,name,checksum,applied_at) VALUES(5,?,?,?)");
+   record.bind(1,std::string(oidc_migration_name));record.bind(2,std::string(oidc_migration_checksum));record.bind(3,utc_now());
+   if(sqlite3_step(record.get())!=SQLITE_DONE)throw std::runtime_error(sqlite_error(db,"Cannot record migration 5"));
   }
   verify_database(db);
   execute(db,"COMMIT");

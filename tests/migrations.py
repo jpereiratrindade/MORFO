@@ -52,10 +52,12 @@ def legacy_database(path, interrupt=False):
 def snapshot(path):
     db = sqlite3.connect(path)
     result = {
-        "migration": db.execute("SELECT version,name,checksum FROM schema_migrations").fetchall(),
+        "migration": db.execute("SELECT version,name,checksum FROM schema_migrations ORDER BY version").fetchall(),
         "users": db.execute("SELECT * FROM users").fetchall(),
         "sessions": db.execute("SELECT * FROM sessions").fetchall(),
         "images": db.execute("SELECT id,user_email,user_id,original_path FROM images").fetchall(),
+        "identity_links": db.execute("SELECT * FROM identity_links").fetchall(),
+        "identity_audit_events": db.execute("SELECT * FROM identity_audit_events").fetchall(),
         "integrity": db.execute("PRAGMA integrity_check").fetchone()[0],
         "foreign_keys": db.execute("PRAGMA foreign_key_check").fetchall(),
     }
@@ -108,6 +110,15 @@ def main():
         db.execute("UPDATE schema_migrations SET checksum='tampered' WHERE version=1")
         db.commit(); db.close()
         run(executable, tampered, success=False)
+
+        tampered5 = root / "tampered5"
+        tampered5.mkdir()
+        legacy_database(tampered5 / "morfo.sqlite3")
+        run(executable, tampered5)
+        db = sqlite3.connect(tampered5 / "morfo.sqlite3")
+        db.execute("UPDATE schema_migrations SET checksum='tampered' WHERE version=5")
+        db.commit(); db.close()
+        run(executable, tampered5, success=False)
 
         future = root / "future"
         run(executable, future)
