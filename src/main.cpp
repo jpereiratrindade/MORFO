@@ -140,12 +140,12 @@ static std::string json_extract_string(const std::string& body,const std::string
  }
  return "";
 }
-static int json_extract_int(const std::string& body,const std::string& key,int fallback=-1){
- std::string pat="\""+key+"\"";auto pos=body.find(pat);if(pos==std::string::npos)return fallback;
- auto colon=body.find(':',pos+pat.size());if(colon==std::string::npos)return fallback;
- auto start=body.find_first_of("-0123456789",colon+1);if(start==std::string::npos)return fallback;
- try{return std::stoi(body.substr(start));}catch(...){return fallback;}
-}
+ static int json_extract_int(const std::string& body,const std::string& key,int fallback=-1){
+  std::string pat="\""+key+"\"";auto pos=body.find(pat);if(pos==std::string::npos)return fallback;
+  auto colon=body.find(':',pos+pat.size());if(colon==std::string::npos)return fallback;
+  auto start=body.find_first_of("-0123456789",colon+1);if(start==std::string::npos)return fallback;
+  try{return std::stoi(body.substr(start));}catch(...){return fallback;}
+ }
 static std::optional<double> json_extract_optional_double(const std::string& body,const std::string& key){
  const std::string needle="\""+key+"\"";auto p=body.find(needle);if(p==std::string::npos)return std::nullopt;
  p=body.find(':',p+needle.size());if(p==std::string::npos)throw Failure("Invalid JSON number");++p;
@@ -1323,6 +1323,91 @@ static Response handle(const App& app,const http::request<http::string_body>& re
   auto r=respond(http::status::ok,v,"{\"status\":\"ok\"}");
   r.set(http::field::set_cookie,"morfo_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax");
   return r;
+ }
+
+ // Admin endpoints (strictly restricted to role == 'admin')
+ if(p.starts_with("/api/v1/admin/")){
+  auto user=authenticate(app,req);
+  if(!user){
+   return problem(v,http::status::unauthorized,"Autenticação necessária.");
+  }
+  if(user->role!="admin"){
+   return problem(v,http::status::forbidden,"Acesso restrito a administradores.");
+  }
+  Db db(app.root/"morfo.sqlite3");
+  if(req.method()==http::verb::get&&p=="/api/v1/admin/users"){
+   auto users=app.auth_service.list_users(db.p);
+   std::ostringstream resp;
+   resp<<"{\"data\":[";
+   bool first=true;
+   for(const auto& u : users){
+    if(!first)resp<<",";
+    first=false;
+    resp<<"{\"id\":"<<q(u.id)
+        <<",\"email\":"<<q(u.email)
+        <<",\"name\":"<<q(u.name)
+        <<",\"role\":"<<q(u.role)
+        <<",\"is_active\":"<<(u.is_active?"true":"false")
+        <<",\"created_at\":"<<q(u.created_at)
+        <<",\"last_login_at\":"<<q(u.last_login_at)<<"}";
+   }
+   resp<<"]}";
+   return respond(http::status::ok,v,resp.str());
+  }
+  if(req.method()==http::verb::post&&p=="/api/v1/admin/users"){
+   std::string email=normalize_email(json_extract_string(req.body(),"email"));
+   std::string name=json_extract_string(req.body(),"name");
+   std::string role=json_extract_string(req.body(),"role");
+   if(email.empty()||email.find('@')==std::string::npos||email.find('.')==std::string::npos){
+    return problem(v,http::status::bad_request,"E-mail inválido.");
+   }
+   if(name.empty())name=name_from_email(email);
+   if(role!="admin"&&role!="researcher"&&role!="user"){
+    role="user";
+   }
+   if(app.auth_service.add_user(db.p,email,name,role)){
+    app.auth_service.record_audit(db.p,user->email,"","ADMIN_USER_SAVE","SUCCESS","User saved: "+email+" role: "+role);
+    return respond(http::status::ok,v,"{\"status\":\"ok\",\"message\":\"Usuário salvo com sucesso.\"}");
+   }else{
+    return problem(v,http::status::internal_server_error,"Falha ao persistir usuário.");
+   }
+  }
+  if(req.method()==http::verb::post&&p=="/api/v1/admin/users/status"){
+   std::string email=normalize_email(json_extract_string(req.body(),"email"));
+   bool active=json_extract_bool(req.body(),"is_active");
+   if(email.empty()){
+    return problem(v,http::status::bad_request,"E-mail não fornecido.");
+   }
+   if(email==user->email&&!active){
+    return problem(v,http::status::bad_request,"Não é permitido desativar seu próprio usuário administrador.");
+   }
+   if(app.auth_service.set_user_active(db.p,email,active)){
+    app.auth_service.record_audit(db.p,user->email,"","ADMIN_USER_STATUS","SUCCESS","User "+email+" active="+(active?"1":"0"));
+    return respond(http::status::ok,v,"{\"status\":\"ok\",\"message\":\"Status do usuário atualizado.\"}");
+   }else{
+    return problem(v,http::status::internal_server_error,"Falha ao atualizar status.");
+   }
+  }
+  if(req.method()==http::verb::get&&p=="/api/v1/admin/audit"){
+   Stmt st(db.p,"SELECT id, email, ip_address, action, decision, details, occurred_at FROM auth_audit_events ORDER BY occurred_at DESC LIMIT 50;");
+   std::ostringstream resp;
+   resp<<"{\"data\":[";
+   bool first=true;
+   while(sqlite3_step(st.p)==SQLITE_ROW){
+    if(!first)resp<<",";
+    first=false;
+    resp<<"{\"id\":"<<q(col(st.p,0))
+        <<",\"email\":"<<q(col(st.p,1))
+        <<",\"ip_address\":"<<q(col(st.p,2))
+        <<",\"action\":"<<q(col(st.p,3))
+        <<",\"decision\":"<<q(col(st.p,4))
+        <<",\"details\":"<<q(col(st.p,5))
+        <<",\"occurred_at\":"<<q(col(st.p,6))<<"}";
+   }
+   resp<<"]}";
+   return respond(http::status::ok,v,resp.str());
+  }
+  return problem(v,http::status::not_found,"Rota administrativa não encontrada.");
  }
 
  if(req.method()==http::verb::get&&p=="/api/v1/profiles")return respond(http::status::ok,v,morfo::profiles::registry_json());

@@ -22,6 +22,7 @@
     <button type="button" data-view="analises"><span class="navico">⌁</span>Análises radiculares</button>
     <button type="button" data-view="integridade"><span class="navico">◈</span>Integridade e origem</button>
     <button type="button" data-view="sobre"><span class="navico">ⓘ</span>Sobre o MORFO</button>
+    <button type="button" data-view="usuarios" id="nav-btn-usuarios" class="hidden"><span class="navico">⚙</span>Gestão de Usuários</button>
    </nav>
    <div class="sidebar-bottom">
     <div class="side-note"><small>PRINCÍPIO DE DESENVOLVIMENTO</small><strong>Sempre pronto.<br>Sempre incompleto.</strong><p>Um sistema que preserva o que observa e explicita o que ainda não sabe.</p></div>
@@ -74,6 +75,72 @@
     </section>
     <section class="view hidden" id="view-integridade" aria-labelledby="integrity-title"><div class="pageintro"><div><span class="section-kicker">RASTREABILIDADE</span><h1 id="integrity-title">Integridade e origem</h1><p>Cada arquivo original tem identidade criptográfica e metadados próprios. Derivados não substituem a fonte.</p></div></div><div class="info-grid"><article class="panel fact"><span class="fact-icon">#</span><h2>SHA-256</h2><p>A identidade do arquivo é calculada sobre seus bytes originais. Arquivos idênticos não são cadastrados duas vezes neste piloto.</p></article><article class="panel fact"><span class="fact-icon">⊞</span><h2>SQLite WAL</h2><p>Os registros ficam em uma base persistente, separada dos arquivos de imagem privados.</p></article><article class="panel fact"><span class="fact-icon">◉</span><h2>Derivados separados</h2><p>Pré-visualizações não alteram o original. O processamento registra versão e estado de qualidade operacional.</p></article></div><div class="panel downloadpanel"><div><h2>Manifesto do seu acervo</h2><p>Exporte os metadados das suas imagens para conferência e organização externa. Não contém medições radiculares.</p></div><a href="/api/v1/export/manifest.csv" class="button primary" download="rizoma-manifesto.csv">↓ Exportar CSV</a></div><div class="notice"><strong>Limite desta versão</strong><p>A preservação por SHA-256 não substitui backups, controle de acesso, guarda institucional nem validação do método de análise. A conferência do hash compara conteúdo; não prova, isoladamente, autoria ou cadeia de custódia.</p></div></section>
     <section class="view hidden" id="view-sobre" aria-labelledby="about-title"><div class="pageintro"><div><span class="section-kicker">SOBRE O SISTEMA</span><h1 id="about-title">Uma infraestrutura que nasce da imagem</h1><p>MORFO v0.2.0 é um primeiro corte operacional para aquisição, preservação e preparação visual de arquivos.</p></div></div><div class="panel aboutpanel"><div class="about-label">ESTADO ATUAL</div><h2>Sempre pronto. Sempre incompleto.</h2><p>Pronto para receber e consultar imagens locais com controle de usuário institucional e acervo isolado por pesquisador. Incompleto por decisão: publicação em nuvem, processamento em lote e métricas automatizadas de raízes ainda serão construídos e validados.</p><p style="margin-top:1rem;font-size:0.875rem;color:var(--text-muted, #7c9e8e)">Distribuído sob licença <strong>GNU General Public License v3.0 (GPLv3)</strong>.</p><div class="phases"><div class="phase now"><span>01</span><strong>Receber e preservar</strong><small>Operacional no piloto</small></div><div class="phase now"><span>02</span><strong>Preparar e inspecionar</strong><small>Operacional no piloto</small></div><div class="phase"><span>03</span><strong>Segmentar e medir</strong><small>Futuro, depende de protocolos e validação</small></div><div class="phase"><span>04</span><strong>Comparar ao longo do tempo</strong><small>Futuro, depende de aquisição padronizada</small></div></div></div></section>
+    <section class="view hidden" id="view-usuarios" aria-labelledby="usuarios-title">
+      <div class="pageintro">
+        <div>
+          <span class="section-kicker">ADMINISTRAÇÃO · CONTROLE DE ACESSO</span>
+          <h1 id="usuarios-title">Gestão de Usuários &amp; Acesso</h1>
+          <p>Gerencie pesquisadores autorizados no LABECO, defina papéis de acesso e monitore a auditoria de autenticação SMTP.</p>
+        </div>
+        <button type="button" class="button primary" id="btn-open-new-user">+ Cadastrar Usuário</button>
+      </div>
+      <div class="statgrid">
+        <article class="stat"><span>Total de Usuários</span><strong id="stat-users-total">—</strong><small>Cadastrados no sistema</small></article>
+        <article class="stat"><span>Usuários Ativos</span><strong id="stat-users-active">—</strong><small>Autorizados a receber código</small></article>
+        <article class="stat"><span>Administradores</span><strong id="stat-users-admins">—</strong><small>Gestão e auditoria</small></article>
+        <article class="stat"><span>Eventos de Auditoria</span><strong id="stat-audit-count">—</strong><small>Tentativas registradas</small></article>
+      </div>
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <span class="section-kicker">CONTROLE DE USUÁRIOS</span>
+            <h2>Usuários autorizados</h2>
+            <p>Apenas e-mails nesta lista podem autenticar no MORFO com chave numérica de uso único.</p>
+          </div>
+          <button id="refresh-users" class="button outline" type="button">↻ Atualizar</button>
+        </div>
+        <div class="toolbar">
+          <label class="searchwrap">
+            <span class="sr-only">Pesquisar usuários</span>
+            <span aria-hidden="true">⌕</span>
+            <input id="user-search" type="search" placeholder="Buscar por e-mail ou nome">
+          </label>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <label class="filterlabel">Papel
+              <select id="user-role-filter">
+                <option value="all">Todos os papéis</option>
+                <option value="admin">Administrador</option>
+                <option value="researcher">Pesquisador</option>
+                <option value="user">Usuário padrão</option>
+              </select>
+            </label>
+            <label class="filterlabel">Status
+              <select id="user-status-filter">
+                <option value="all">Todos os status</option>
+                <option value="active">Apenas Ativos</option>
+                <option value="inactive">Apenas Inativos</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <div id="users-table-container" class="admin-table-wrap">
+          <div class="empty"><h3>Carregando usuários…</h3></div>
+        </div>
+      </section>
+      <section class="panel" style="margin-top:20px;">
+        <div class="section-heading">
+          <div>
+            <span class="section-kicker">SEGURANÇA LOCAL</span>
+            <h2>Trilha de auditoria SMTP</h2>
+            <p>Registro imutável dos últimos 50 eventos de requisição e validação de chaves temporárias.</p>
+          </div>
+          <button id="refresh-audit" class="button outline" type="button">↻ Atualizar log</button>
+        </div>
+        <div id="audit-table-container" class="admin-table-wrap">
+          <div class="empty"><h3>Carregando auditoria…</h3></div>
+        </div>
+      </section>
+    </section>
    </main>
    <footer class="footer"><span>MORFO · Ecossistema SisTer · GPL v3.0</span><span>Sempre pronto. Sempre incompleto.</span></footer>
   </div>
@@ -278,6 +345,43 @@
 <div id="image-delete-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="del-img-title"><section class="modal sm-card"><div class="modal-head"><div><span class="section-kicker">CONFIRMAÇÃO DE EXCLUSÃO</span><h2 id="del-img-title">Excluir imagem do acervo</h2></div><button class="close" id="close-delete-image" type="button" aria-label="Fechar">×</button></div><div class="modal-body-pad"><p>Tem certeza de que deseja excluir a imagem <strong id="delete-image-name"></strong>?</p><div class="notice"><strong>Preservação Rastreável</strong><p>A exclusão é suave (soft-delete): o registro sai do catálogo ativo e do manifesto, mantendo o histórico de auditoria e a integridade dos dados.</p></div></div><div class="modal-foot-actions"><button type="button" class="button outline" id="btn-cancel-delete-image">Cancelar</button><button type="button" class="button danger-btn" id="btn-confirm-delete-image">Confirmar exclusão</button></div></section></div>
 <div id="analysis-delete-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="del-an-title"><section class="modal sm-card"><div class="modal-head"><div><span class="section-kicker">CONFIRMAÇÃO DE EXCLUSÃO</span><h2 id="del-an-title">Excluir execução de análise</h2></div><button class="close" id="close-delete-analysis" type="button" aria-label="Fechar">×</button></div><div class="modal-body-pad"><p>Deseja remover esta execução de análise (<code id="delete-analysis-id"></code>)?</p><div class="notice"><strong>Histórico e Auditoria</strong><p>A execução é desativada do catálogo ativo e preservada em logs de auditoria. Outras análises da imagem permanecem intactas.</p></div></div><div class="modal-foot-actions"><button type="button" class="button outline" id="btn-cancel-delete-analysis">Cancelar</button><button type="button" class="button danger-btn" id="btn-confirm-delete-analysis">Excluir análise</button></div></section></div>
 <div id="batch-confirm-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="batch-conf-title"><section class="modal sm-card"><div class="modal-head"><div><span class="section-kicker">CURADORIA EM LOTE</span><h2 id="batch-conf-title">Confirmar regiões pendentes</h2></div><button class="close" id="close-batch-confirm" type="button" aria-label="Fechar">×</button></div><form id="batch-confirm-form"><div class="modal-body-pad"><p>Deseja aprovar e confirmar todas as <strong id="batch-confirm-count">0</strong> regiões pendentes de acordo com a hipótese visual sugerida pelo algoritmo?</p><label class="field-label"><span>Justificativa científica <small>Opcional</small></span><input type="text" id="batch-confirm-justification" maxlength="500" value="Aprovação em lote por inspeção visual global"></label><div class="notice"><strong>Rastreabilidade Preservada</strong><p>Cada região receberá seu próprio evento individual no histórico com a ação CONFIRM, carimbo de data/hora e identificador de operador.</p></div></div><div class="modal-foot-actions"><button type="button" class="button outline" id="btn-cancel-batch-confirm">Cancelar</button><button type="submit" class="button primary" id="btn-submit-batch-confirm">Confirmar todas em lote ⚡</button></div></form></section></div>
+<div id="user-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="user-modal-title">
+  <section class="modal sm-card">
+    <div class="modal-head">
+      <div>
+        <span class="section-kicker">CONTROLE DE ACESSO</span>
+        <h2 id="user-modal-title">Cadastrar Usuário</h2>
+      </div>
+      <button class="close" id="close-user-modal" type="button" aria-label="Fechar">×</button>
+    </div>
+    <form id="user-form" class="edit-form">
+      <div class="modal-body-pad">
+        <label class="field-label">
+          <span>Endereço de e-mail <small>Obrigatório</small></span>
+          <input type="email" id="user-form-email" required placeholder="usuario@embrapa.br ou @gmail.com">
+          <small class="auth-hint">A chave OTP de 6 dígitos será enviada para este endereço.</small>
+        </label>
+        <label class="field-label">
+          <span>Nome completo <small>Opcional</small></span>
+          <input type="text" id="user-form-name" placeholder="Ex.: José Pedro Trindade">
+        </label>
+        <label class="field-label">
+          <span>Papel de acesso</span>
+          <select id="user-form-role">
+            <option value="researcher">Pesquisador (acervo, envio de imagens, análises)</option>
+            <option value="admin">Administrador (acesso completo + gestão de usuários)</option>
+            <option value="user">Usuário padrão (visualização e inspeção do acervo)</option>
+          </select>
+        </label>
+        <div id="user-form-feedback" class="auth-feedback hidden" style="margin-top:10px;"></div>
+      </div>
+      <div class="modal-foot-actions">
+        <button type="button" class="button outline" id="btn-cancel-user">Cancelar</button>
+        <button type="submit" class="button primary" id="btn-save-user">Salvar Usuário ✓</button>
+      </div>
+    </form>
+  </section>
+</div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script src="/app.js" defer></script>
 <script src="/morfo-profiles.js" defer></script>

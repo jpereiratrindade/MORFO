@@ -20,7 +20,7 @@ const h = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;'
 const number = new Intl.NumberFormat('pt-BR');
 let images = [], selectedFiles = [], rootMetricRecords = [], current = null, mode = 'original', currentUser = null, currentAnalysis = null, analysisRuns = [], selectedRegion = null;
 let viewer = {imageId:null, manifest:null, scale:1, x:0, y:0, fit:true, drag:null, revision:0, frame:0};
-const viewNames = {acervo:'Acervo de imagens',recebimento:'Recebimento',analises:'Análises radiculares',integridade:'Integridade e origem',sobre:'Sobre o MORFO'};
+const viewNames = {acervo:'Acervo de imagens',recebimento:'Recebimento',analises:'Análises radiculares',integridade:'Integridade e origem',sobre:'Sobre o MORFO',usuarios:'Gestão de Usuários & Acesso'};
 
 const STRATEGY_DESCRIPTIONS = {
   BAYESIAN_CALIBRATED: {
@@ -74,6 +74,7 @@ function nav(view){
   location.hash = view;
   window.scrollTo(0, 0);
   if(view==='analises'){showRootAnalysisCatalog();loadRootMetricRecords();}
+  if(view==='usuarios'){loadUsers();}
 }
 
 async function api(path, options = {}){
@@ -106,15 +107,23 @@ function getInitials(name, email){
 function updateUserUI(){
   const chip = $('user-chip');
   const opEmail = $('operator-email');
+  const navUsuarios = $('nav-btn-usuarios');
   if(currentUser){
     chip.classList.remove('hidden');
     $('user-avatar').textContent = getInitials(currentUser.name, currentUser.email);
     $('user-email').textContent = currentUser.email;
     $('user-email').title = currentUser.name ? `${currentUser.name} (${currentUser.email})` : currentUser.email;
+    const roleLabel = currentUser.role === 'admin' ? 'Administrador' : currentUser.role === 'researcher' ? 'Pesquisador' : 'Usuário';
+    const roleEl = document.querySelector('.user-role');
+    if(roleEl) roleEl.textContent = roleLabel;
     if(opEmail) opEmail.textContent = currentUser.email;
+    if(navUsuarios){
+      navUsuarios.classList.toggle('hidden', currentUser.role !== 'admin');
+    }
   } else {
     chip.classList.add('hidden');
     if(opEmail) opEmail.textContent = 'Não autenticado';
+    if(navUsuarios) navUsuarios.classList.add('hidden');
   }
 }
 
@@ -2138,3 +2147,242 @@ async function navigateRefinement(action){try{renderRefinementState((await api(`
 const refinementCanvas=$('refinement-selection');refinementCanvas.onpointerdown=event=>{const tool=$('refinement-tool').value,point=refinementPoint(event);if(tool==='rectangle'){refinement.dragStart=point;refinement.points=[point,point];refinement.drawing=true;refinementCanvas.setPointerCapture(event.pointerId);}else if(tool==='brush'){refinement.points=[point];refinement.drawing=true;refinementCanvas.setPointerCapture(event.pointerId);}else{refinement.points.push(point);drawRefinementSelection();}};
 refinementCanvas.onpointermove=event=>{if(!refinement.drawing)return;const point=refinementPoint(event);if($('refinement-tool').value==='rectangle')refinement.points[1]=point;else refinement.points.push(point);drawRefinementSelection();};refinementCanvas.onpointerup=()=>{refinement.drawing=false;};
 $('start-refinement').onclick=openRefinement;$('close-refinement').onclick=()=>{$('refinement-modal').classList.add('hidden');++refinement.request;};$('refinement-clear').onclick=clearRefinementSelection;$('refinement-tool').onchange=clearRefinementSelection;$('refinement-preview').onclick=previewRefinement;$('refinement-cancel-preview').onclick=cancelRefinementPreview;$('refinement-apply').onclick=applyRefinement;$('refinement-undo').onclick=()=>navigateRefinement('undo');$('refinement-redo').onclick=()=>navigateRefinement('redo');$('refinement-confirm').onclick=async()=>{try{const confirmed=(await api(`/api/v1/refinements/${refinement.id}/confirm`,{method:'POST'})).data;renderRefinementState(confirmed);window.dispatchEvent(new CustomEvent('morfo:refinement-confirmed',{detail:{sessionId:refinement.id,state:confirmed}}));$('refinement-modal').classList.add('hidden');++refinement.request;toast('Resultado confirmado. Sobreposição consolidada exibida na análise.');}catch(error){toast(error.message);}};$('refinement-brush').oninput=()=>{$('refinement-brush-value').textContent=$('refinement-brush').value+' px';drawRefinementSelection();};$('refinement-opacity').oninput=()=>{$('refinement-opacity-value').textContent=$('refinement-opacity').value+'%';$('refinement-image').style.opacity=Number($('refinement-opacity').value)/100;};$('refinement-preset').onchange=()=>{const preset=selectedRefinementPreset();$('refinement-preset-name').value=preset?.name||'';$('refinement-preset-delete').disabled=!preset;compareRefinementParameters();};$('refinement-preset-load').onclick=loadSelectedRefinementPreset;$('refinement-preset-save').onclick=saveRefinementPreset;$('refinement-preset-delete').onclick=deleteRefinementPreset;$('refinement-restore-defaults').onclick=()=>{renderRefinementPresets();writeRefinementParameters(refinement.defaults);};Object.values(refinementParameterFields).forEach(id=>$(id).addEventListener('input',compareRefinementParameters));
+
+// -----------------------------------------------------------------------------
+// USER MANAGEMENT & ACCESS CONTROL (ADMIN ONLY)
+// -----------------------------------------------------------------------------
+let allUsers = [];
+let auditEvents = [];
+
+async function loadUsers(){
+  const container = $('users-table-container');
+  const auditContainer = $('audit-table-container');
+  if(!container) return;
+  try{
+    const [uRes, aRes] = await Promise.all([
+      api('/api/v1/admin/users'),
+      api('/api/v1/admin/audit')
+    ]);
+    allUsers = uRes.data || [];
+    auditEvents = aRes.data || [];
+
+    const total = allUsers.length;
+    const active = allUsers.filter(u => u.is_active).length;
+    const admins = allUsers.filter(u => u.role === 'admin').length;
+    if($('stat-users-total')) $('stat-users-total').textContent = number.format(total);
+    if($('stat-users-active')) $('stat-users-active').textContent = number.format(active);
+    if($('stat-users-admins')) $('stat-users-admins').textContent = number.format(admins);
+    if($('stat-audit-count')) $('stat-audit-count').textContent = number.format(auditEvents.length);
+
+    renderUsersTable();
+    renderAuditTable();
+  }catch(err){
+    container.innerHTML = `<div class="empty"><h3>Erro ao carregar usuários</h3><p>${h(err.message)}</p></div>`;
+    if(auditContainer) auditContainer.innerHTML = `<div class="empty"><h3>Erro ao carregar auditoria</h3><p>${h(err.message)}</p></div>`;
+  }
+}
+
+function renderUsersTable(){
+  const container = $('users-table-container');
+  if(!container) return;
+  const search = ($('user-search')?.value || '').trim().toLowerCase();
+  const roleFilter = $('user-role-filter')?.value || 'all';
+  const statusFilter = $('user-status-filter')?.value || 'all';
+
+  const filtered = allUsers.filter(u => {
+    const matchesSearch = !search || [u.email, u.name, u.id].join(' ').toLowerCase().includes(search);
+    const matchesRole = (roleFilter === 'all' || u.role === roleFilter);
+    const matchesStatus = (statusFilter === 'all' || (statusFilter === 'active' && u.is_active) || (statusFilter === 'inactive' && !u.is_active));
+    return matchesSearch && matchesRole && matchesStatus;
+  });
+
+  if(!filtered.length){
+    container.innerHTML = `<div class="empty"><h3>Nenhum usuário encontrado</h3><p>Ajuste os filtros de pesquisa ou cadastre um novo usuário.</p></div>`;
+    return;
+  }
+
+  let html = `<table class="admin-table">
+    <thead>
+      <tr>
+        <th>Usuário</th>
+        <th>Papel</th>
+        <th>Status</th>
+        <th>Último Acesso</th>
+        <th>Criado em</th>
+        <th style="text-align:right;">Ações</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  for(const u of filtered){
+    const isSelf = currentUser && currentUser.email === u.email;
+    const roleNames = {admin: 'Administrador', researcher: 'Pesquisador', user: 'Usuário'};
+    const roleClass = u.role || 'user';
+    const roleText = roleNames[u.role] || u.role;
+    const lastLogin = u.last_login_at ? new Date(u.last_login_at).toLocaleString('pt-BR') : 'Nunca acessou';
+    const createdAt = u.created_at ? u.created_at.slice(0, 10) : '—';
+
+    html += `<tr>
+      <td>
+        <div class="user-cell">
+          <span class="user-avatar" aria-hidden="true">${h(getInitials(u.name, u.email))}</span>
+          <div class="user-info-text">
+            <strong>${h(u.name || u.email)} ${isSelf ? '<small style="color:var(--blue);font-weight:800;">(Você)</small>' : ''}</strong>
+            <span>${h(u.email)}</span>
+          </div>
+        </div>
+      </td>
+      <td>
+        <span class="role-badge ${h(roleClass)}">${h(roleText)}</span>
+      </td>
+      <td>
+        <span class="status-badge ${u.is_active ? 'active' : 'inactive'}">${u.is_active ? 'Ativo' : 'Inativo'}</span>
+      </td>
+      <td><small style="color:var(--navy);font-weight:600;">${h(lastLogin)}</small></td>
+      <td><small style="color:var(--muted);">${h(createdAt)}</small></td>
+      <td style="text-align:right;">
+        <div class="admin-actions" style="justify-content:flex-end;">
+          <button type="button" class="admin-btn" data-edit-user="${h(u.email)}">Editar</button>
+          ${isSelf ? '<button type="button" class="admin-btn" disabled title="Não é permitido desativar sua própria conta">Ativo</button>' : `
+            <button type="button" class="admin-btn ${u.is_active ? 'danger' : 'success'}" data-toggle-user="${h(u.email)}" data-new-status="${!u.is_active}">
+              ${u.is_active ? 'Desativar' : 'Ativar'}
+            </button>
+          `}
+        </div>
+      </td>
+    </tr>`;
+  }
+
+  html += `</tbody></table>`;
+  container.innerHTML = html;
+
+  for(const btn of container.querySelectorAll('[data-edit-user]')){
+    btn.onclick = () => openEditUserModal(btn.dataset.editUser);
+  }
+  for(const btn of container.querySelectorAll('[data-toggle-user]')){
+    btn.onclick = () => toggleUserStatus(btn.dataset.toggleUser, btn.dataset.newStatus === 'true');
+  }
+}
+
+function renderAuditTable(){
+  const container = $('audit-table-container');
+  if(!container) return;
+  if(!auditEvents.length){
+    container.innerHTML = `<div class="empty"><h3>Nenhum registro de auditoria</h3><p>Eventos de solicitação e validação de chaves serão exibidos aqui.</p></div>`;
+    return;
+  }
+  let html = `<table class="admin-table">
+    <thead>
+      <tr>
+        <th>Horário</th>
+        <th>E-mail</th>
+        <th>IP</th>
+        <th>Ação</th>
+        <th>Decisão</th>
+        <th>Detalhes</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  for(const a of auditEvents){
+    const timeStr = a.occurred_at ? new Date(a.occurred_at).toLocaleString('pt-BR') : a.occurred_at;
+    html += `<tr>
+      <td><small style="font-family:ui-monospace,monospace;color:var(--navy);font-weight:700;">${h(timeStr)}</small></td>
+      <td><strong>${h(a.email)}</strong></td>
+      <td><small style="font-family:ui-monospace,monospace;color:var(--muted);">${h(a.ip_address || '—')}</small></td>
+      <td><span style="font-weight:750;font-size:.76rem;">${h(a.action)}</span></td>
+      <td><span class="audit-decision ${h(a.decision)}">${h(a.decision)}</span></td>
+      <td><small style="color:var(--muted);">${h(a.details || '')}</small></td>
+    </tr>`;
+  }
+  html += `</tbody></table>`;
+  container.innerHTML = html;
+}
+
+async function toggleUserStatus(email, newStatus){
+  try{
+    await api('/api/v1/admin/users/status', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({email, is_active: newStatus})
+    });
+    toast(`Usuário ${email} ${newStatus ? 'ativado' : 'desativado'} com sucesso.`);
+    await loadUsers();
+  }catch(err){
+    toast(err.message);
+  }
+}
+
+function openNewUserModal(){
+  $('user-modal-title').textContent = 'Cadastrar Novo Usuário';
+  $('user-form-email').value = '';
+  $('user-form-email').disabled = false;
+  $('user-form-name').value = '';
+  $('user-form-role').value = 'researcher';
+  setUserFormFeedback('');
+  $('user-modal').classList.remove('hidden');
+  $('user-form-email').focus();
+}
+
+function openEditUserModal(email){
+  const u = allUsers.find(x => x.email === email);
+  if(!u) return;
+  $('user-modal-title').textContent = 'Editar Usuário';
+  $('user-form-email').value = u.email;
+  $('user-form-email').disabled = true;
+  $('user-form-name').value = u.name || '';
+  $('user-form-role').value = u.role || 'user';
+  setUserFormFeedback('');
+  $('user-modal').classList.remove('hidden');
+  $('user-form-name').focus();
+}
+
+function closeUserModal(){
+  $('user-modal').classList.add('hidden');
+  setUserFormFeedback('');
+}
+
+function setUserFormFeedback(msg, type = 'error'){
+  const box = $('user-form-feedback');
+  if(!box) return;
+  if(!msg){ box.classList.add('hidden'); box.textContent = ''; return; }
+  box.className = `auth-feedback ${type}`;
+  box.textContent = msg;
+  box.classList.remove('hidden');
+}
+
+async function saveUser(e){
+  e.preventDefault();
+  const email = $('user-form-email').value.trim().toLowerCase();
+  const name = $('user-form-name').value.trim();
+  const role = $('user-form-role').value;
+  const btn = $('btn-save-user');
+  btn.disabled = true;
+  setUserFormFeedback('');
+  try{
+    const res = await api('/api/v1/admin/users', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({email, name, role})
+    });
+    toast(res.message || 'Usuário salvo com sucesso!');
+    closeUserModal();
+    await loadUsers();
+  }catch(err){
+    setUserFormFeedback(err.message, 'error');
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+// Wire admin listeners
+if($('btn-open-new-user')) $('btn-open-new-user').onclick = openNewUserModal;
+if($('close-user-modal')) $('close-user-modal').onclick = closeUserModal;
+if($('btn-cancel-user')) $('btn-cancel-user').onclick = closeUserModal;
+if($('user-form')) $('user-form').onsubmit = saveUser;
+if($('refresh-users')) $('refresh-users').onclick = loadUsers;
+if($('refresh-audit')) $('refresh-audit').onclick = loadUsers;
+if($('user-search')) $('user-search').oninput = renderUsersTable;
+if($('user-role-filter')) $('user-role-filter').onchange = renderUsersTable;
+if($('user-status-filter')) $('user-status-filter').onchange = renderUsersTable;
+
