@@ -7,7 +7,7 @@
   const $ = id => document.getElementById(id);
   const number = new Intl.NumberFormat('pt-BR');
   const state = { imageId:null, imageMeta:null, runs:[], run:null, report:null, metrics:null, metricRuns:[], calibrations:[],
-                  layer:'original', opacity:0.85, generation:0, busy:false, profileAvailable:true };
+                  layer:'original', opacity:0.85, generation:0, busy:false, profileAvailable:true, refinementId:null };
   const profile = 'roots-exp003';
   const rootPath = id => `/api/v1/images/${encodeURIComponent(id)}/profiles/${profile}`;
   const artifactPath = (id,run,kind) => `${rootPath(id)}/${encodeURIComponent(run)}/${kind}`;
@@ -175,7 +175,7 @@
     state.layer=kind;
     refreshLayers();
     if(!layer || kind==='original')return;
-    const expected=artifactPath(state.imageId,state.run.id,kind);
+    const expected=state.refinementId?`/api/v1/refinements/${encodeURIComponent(state.refinementId)}/${kind}`:artifactPath(state.imageId,state.run.id,kind);
     // The overlay lives within #analysis-canvas, the very same transformed image coordinate system.
     layer.src=expected;
   }
@@ -198,7 +198,7 @@
   async function selectRun(id) {
     const imageId=state.imageId;
     const epoch=++state.generation;
-    clearVisual();
+    state.refinementId=null;clearVisual();
     if(!id){message('Nenhuma execução selecionada.');renderPanel();return;}
     const run=state.runs.find(r=>r.id===id);
     if(!run)throw Error('Execução indisponível no histórico');
@@ -335,7 +335,7 @@
 
   function onImageClosed(){
     state.generation++;
-    state.imageId=null;state.imageMeta=null;state.runs=[];state.calibrations=[];state.busy=false;
+    state.imageId=null;state.imageMeta=null;state.runs=[];state.calibrations=[];state.busy=false;state.refinementId=null;
     if($('morfo-refine'))$('morfo-refine').disabled=true;
     clearVisual();renderPanel();
   }
@@ -344,5 +344,6 @@
     build();verifyRegistry();
     window.addEventListener('morfo:image-opened',onImageOpened);
     window.addEventListener('morfo:image-closed',onImageClosed);
+    window.addEventListener('morfo:refinement-confirmed',event=>{const id=event.detail?.sessionId;if(!id||!state.imageId)return;state.refinementId=id;state.layer='overlay';if(layer){layer.src=`/api/v1/refinements/${encodeURIComponent(id)}/overlay?t=${Date.now()}`;layer.classList.remove('hidden');layer.style.opacity=String(state.opacity);}refreshLayers();message('Refinamento confirmado · máscara consolidada ativa. Use Máscara binária ou Sobreposição para inspecionar.');});
   });
 })();
