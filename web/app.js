@@ -120,11 +120,36 @@ async function updateAuthProvidersUI(){
   try{
     const res = await api('/api/v1/auth/providers');
     const googleSec = $('auth-google-section');
+    const googleBtn = $('btn-google-login');
+    const googleHint = $('google-config-hint');
     const divider = $('auth-divider');
     const emailForm = $('auth-email-form');
-    if(googleSec && !res.google_enabled){
-      googleSec.classList.add('hidden');
+
+    if(googleSec){
+      googleSec.classList.remove('hidden');
+      if(!res.google_enabled){
+        if(googleBtn){
+          googleBtn.classList.add('disabled-provider');
+          googleBtn.onclick = (e) => {
+            e.preventDefault();
+            const banner = $('auth-status-banner');
+            if(banner){
+              banner.className = 'auth-status-banner warning';
+              banner.innerHTML = '<strong>Configuração Pendente no Servidor:</strong> O login institucional Google OpenID Connect exige a definição das credenciais <code>MORFO_GOOGLE_CLIENT_ID</code> e <code>MORFO_GOOGLE_CLIENT_SECRET</code> no ambiente ou no arquivo <code>.env</code>. Para o piloto local, preencha as variáveis e reinicie o serviço.';
+              banner.classList.remove('hidden');
+            }
+          };
+        }
+        if(googleHint) googleHint.classList.remove('hidden');
+      } else {
+        if(googleBtn){
+          googleBtn.classList.remove('disabled-provider');
+          googleBtn.onclick = null;
+        }
+        if(googleHint) googleHint.classList.add('hidden');
+      }
     }
+
     if(emailForm && !res.email_otp_enabled){
       emailForm.classList.add('hidden');
       if(divider) divider.classList.add('hidden');
@@ -178,11 +203,9 @@ function showAuthOverlay(infoMsg){
   $('auth-overlay').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
   updateAuthProvidersUI();
-  $('auth-email-form').classList.remove('hidden');
-  $('auth-code-form').classList.add('hidden');
-  $('auth-dev-preview').classList.add('hidden');
   setAuthFeedback(infoMsg || '', infoMsg ? 'error' : '');
-  setTimeout(() => $('auth-email-input').focus(), 50);
+  const googleBtn = $('btn-google-login');
+  if(googleBtn) setTimeout(() => googleBtn.focus(), 50);
 }
 
 function hideAuthOverlay(){

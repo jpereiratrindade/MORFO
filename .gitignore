@@ -10,6 +10,7 @@
 *.log
 .env
 .env.*
+!.env.example
 
 # Safe local backups of UX hotfixes
 /.morfo-backups/

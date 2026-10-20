@@ -17,6 +17,15 @@
 
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
+
+if [ -f .env ]; then
+  set -a
+  # shellcheck source=/dev/null
+  source .env
+  set +a
+fi
+
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 exec ./build/morfo-server --host "${MORFO_HOST:-0.0.0.0}" --data-dir "${MORFO_DATA_DIR:-./var}" --web-dir ./web --port "${MORFO_PORT:-8091}" "$@"
+

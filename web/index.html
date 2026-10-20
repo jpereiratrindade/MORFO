@@ -88,69 +88,32 @@
      <strong class="auth-brand-name">MORFO</strong>
     </div>
    </div>
-   <span class="auth-badge">ACESSO RESTRITO</span>
-   <h1 id="auth-title" class="auth-title">Registro &amp; Acesso Institucional</h1>
-   <p class="auth-desc">Identifique-se com seu e-mail institucional Embrapa para receber sua chave temporária de acesso ao acervo e à ingestão de imagens.</p>
-   <div class="auth-domain-tag">Somente e-mails <strong>@embrapa.br</strong> são permitidos</div>
+   <span class="auth-badge">ACESSO INSTITUCIONAL</span>
+   <h1 id="auth-title" class="auth-title">Autenticação Embrapa</h1>
+   <p class="auth-desc">Identifique-se com sua conta Google Workspace institucional (@embrapa.br) para acessar o acervo e as ferramentas do laboratório.</p>
+   <div class="auth-domain-tag">Exclusivo para contas <strong>@embrapa.br</strong></div>
   </div>
 
   <div class="auth-body">
    <div id="auth-status-banner" class="auth-status-banner hidden" role="alert"></div>
 
-   <!-- Opção Google OpenID Connect -->
+   <!-- Conexão Exclusiva Google / Gmail Embrapa -->
    <div id="auth-google-section" class="auth-google-section">
      <a href="/api/v1/auth/google/start" id="btn-google-login" class="google-button">
        <svg class="google-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>
-       <span>Entrar com Google (Embrapa)</span>
+       <span>Entrar com Gmail (Embrapa)</span>
      </a>
-     <div class="auth-divider" id="auth-divider"><span>ou acesse via chave por e-mail</span></div>
+     <small id="google-config-hint" class="auth-google-hint hidden">Configuração OIDC pendente no servidor (requer MORFO_GOOGLE_CLIENT_ID)</small>
    </div>
 
-   <!-- Etapa 1: Inserir E-mail -->
-   <form id="auth-email-form" class="auth-form" novalidate>
-    <label class="auth-label" for="auth-email-input">
-     <span>E-mail institucional (@embrapa.br)</span>
-     <div class="auth-input-wrap">
-      <span class="auth-icon" aria-hidden="true">✉</span>
-      <input type="email" id="auth-email-input" placeholder="nome.sobrenome@embrapa.br" required autocomplete="email" autofocus>
-     </div>
-     <small class="auth-hint">Uma chave de acesso de 6 dígitos será enviada para o endereço informado.</small>
-    </label>
-    <button type="submit" class="button primary full auth-submit" id="btn-request-code">
-     Solicitar chave por e-mail <span aria-hidden="true">→</span>
-    </button>
-   </form>
-
-   <!-- Etapa 2: Validar Código de 6 dígitos -->
-   <form id="auth-code-form" class="auth-form hidden" novalidate>
-    <div class="auth-sent-banner">
-     <span>Chave enviada para:</span>
-     <strong id="auth-target-email">usuario@embrapa.br</strong>
-    </div>
-    <label class="auth-label" for="auth-code-input">
-     <span>Chave temporária de acesso</span>
-     <div class="auth-input-wrap">
-      <span class="auth-icon" aria-hidden="true">⚿</span>
-      <input type="text" id="auth-code-input" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" placeholder="000000" class="code-box" autocomplete="one-time-code">
-     </div>
-     <small class="auth-hint">Código numérico de 6 dígitos recebido por e-mail (válido por 15 minutos).</small>
-    </label>
-
-    <div id="auth-dev-preview" class="auth-dev-preview hidden">
-     <div class="dev-banner-head"><span class="dev-tag">MODO LOCAL (PILOTO)</span><span>Console do servidor</span></div>
-     <p>Chave gerada no servidor: <strong id="auth-dev-code-val"></strong></p>
-    </div>
-
-    <button type="submit" class="button primary full auth-submit" id="btn-verify-code">
-     Confirmar chave e entrar <span aria-hidden="true">✓</span>
-    </button>
-
-    <div class="auth-links">
-     <button type="button" class="link-btn" id="btn-resend-code">↻ Reenviar nova chave</button>
-     <span class="link-sep" aria-hidden="true">·</span>
-     <button type="button" class="link-btn" id="btn-switch-email">Trocar e-mail</button>
-    </div>
-   </form>
+   <div style="display:none" aria-hidden="true">
+     <form id="auth-email-form"><input id="auth-email-input"><button id="btn-request-code"></button></form>
+     <form id="auth-code-form">
+       <span id="auth-target-email"></span><input id="auth-code-input"><button id="btn-verify-code"></button>
+       <div id="auth-dev-preview"><span id="auth-dev-code-val"></span></div>
+       <button id="btn-resend-code"></button><button id="btn-switch-email"></button>
+     </form>
+   </div>
 
    <div id="auth-feedback" class="auth-feedback hidden" role="status" aria-live="polite"></div>
   </div>
