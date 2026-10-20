@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <ctime>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -17,6 +18,8 @@
 #include <openssl/hmac.h>
 #include <openssl/rand.h>
 #include <openssl/sha.h>
+
+namespace fs = std::filesystem;
 
 namespace morfo::auth {
 
@@ -241,10 +244,26 @@ bool AuthSmtpService::send_email(const std::string& to_email, const std::string&
         << "Se voce nao solicitou este codigo, por favor ignore este e-mail.\r\n\r\n"
         << "--\r\nMORFO - Percepcao e Classificacao Tematica - Embrapa\r\n";
 
+    fs::path temp_mail = fs::temp_directory_path() / ("morfo-mail-" + generate_session_token().substr(0, 12) + ".eml");
+    {
+        std::ofstream ofs(temp_mail, std::ios::binary);
+        if (!ofs) {
+            err_out = "Não foi possível criar arquivo temporário para envio de mensagem";
+            return false;
+        }
+        ofs << msg.str();
+    }
+
+    // Strip spaces from password if user entered "abcd efgh ijkl mnop"
+    std::string clean_pass = config_.smtp_pass;
+    clean_pass.erase(std::remove_if(clean_pass.begin(), clean_pass.end(), [](unsigned char c) { return std::isspace(c); }), clean_pass.end());
+
     std::ostringstream cmd;
-    cmd << "curl --silent --show-error --url 'smtp://" << config_.smtp_host << ":" << config_.smtp_port << "'";
+    cmd << "curl --silent --show-error --connect-timeout 15 --max-time 30";
+    cmd << " --url 'smtp://" << config_.smtp_host << ":" << config_.smtp_port << "'";
     cmd << " --mail-from " << shell_quote(config_.smtp_from);
     cmd << " --mail-rcpt " << shell_quote(to_email);
+    cmd << " --upload-file " << shell_quote(temp_mail.string());
 
     if (config_.smtp_port == 587 || config_.smtp_port == 25) {
         cmd << " --ssl-reqd";
@@ -253,21 +272,29 @@ bool AuthSmtpService::send_email(const std::string& to_email, const std::string&
     }
 
     if (!config_.smtp_user.empty()) {
-        cmd << " --user " << shell_quote(config_.smtp_user + ":" + config_.smtp_pass);
+        cmd << " --user " << shell_quote(config_.smtp_user + ":" + clean_pass);
     }
+    cmd << " 2>&1";
 
-    FILE* pipe = popen(cmd.str().c_str(), "w");
-    if (!pipe) {
+    FILE* pipe = popen(cmd.str().c_str(), "r");
+    std::string curl_output;
+    if (pipe) {
+        char buf[512];
+        while (fgets(buf, sizeof(buf), pipe)) {
+            curl_output += buf;
+        }
+        int status = pclose(pipe);
+        std::error_code ec;
+        fs::remove(temp_mail, ec);
+        if (status != 0) {
+            err_out = "Falha no envio via SMTP: " + curl_output + " (código " + std::to_string(status) + ")";
+            std::cerr << "[MORFO SMTP ERROR] " << err_out << "\n";
+            return false;
+        }
+    } else {
+        std::error_code ec;
+        fs::remove(temp_mail, ec);
         err_out = "Não foi possível disparar processo de entrega SMTP";
-        return false;
-    }
-
-    std::string email_data = msg.str();
-    fwrite(email_data.data(), 1, email_data.size(), pipe);
-    int status = pclose(pipe);
-
-    if (status != 0) {
-        err_out = "Falha no envio via SMTP (código de retorno " + std::to_string(status) + ")";
         return false;
     }
     return true;
