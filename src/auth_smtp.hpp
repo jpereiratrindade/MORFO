@@ -15,10 +15,10 @@ namespace morfo::auth {
 struct AuthSmtpConfig {
     std::string smtp_host = "smtp.gmail.com";
     int smtp_port = 587;
-    std::string smtp_user = "jpereiratrindade@gmail.com";
+    std::string smtp_user;
     std::string smtp_pass;
-    std::string smtp_from = "jpereiratrindade@gmail.com";
-    std::string smtp_from_name = "MORFO SisTer (Embrapa)";
+    std::string smtp_from;
+    std::string smtp_from_name = "MORFO SisTer";
     std::string auth_secret;
     int code_ttl_seconds = 600;      // 10 minutes
     int cooldown_seconds = 60;       // 60 seconds between resends

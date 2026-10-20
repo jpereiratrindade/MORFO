@@ -96,21 +96,23 @@ static void test_auth_service_full_lifecycle() {
     cfg.code_ttl_seconds = 600;
 
     AuthSmtpService svc(cfg);
+    const std::string test_email = "pesquisador.teste@labeco.org";
+    const std::string test_name = "Pesquisador Teste";
 
     // 1. Add user via administrative CLI API
     std::cout << "  [Step 1] add_user...\n";
-    bool added = svc.add_user(db, "jpereiratrindade@gmail.com", "José Pedro", "admin");
+    bool added = svc.add_user(db, test_email, test_name, "admin");
     CHECK(added);
 
     auto users = svc.list_users(db);
     CHECK(users.size() == 1);
-    CHECK(users[0].email == "jpereiratrindade@gmail.com");
+    CHECK(users[0].email == test_email);
     CHECK(users[0].role == "admin");
     CHECK(users[0].is_active);
 
     // 2. Request OTP code
     std::cout << "  [Step 2] request_code...\n";
-    auto req_res = svc.request_code(db, "jpereiratrindade@gmail.com", "127.0.0.1");
+    auto req_res = svc.request_code(db, test_email, "127.0.0.1");
     CHECK(req_res.ok);
     CHECK(req_res.status_code == 200);
     CHECK(!req_res.dev_code.empty());
@@ -121,7 +123,7 @@ static void test_auth_service_full_lifecycle() {
     sqlite3_stmt* check_st = nullptr;
     rc = sqlite3_prepare_v2(db, "SELECT code_hmac FROM auth_codes WHERE email=? AND used_at IS NULL", -1, &check_st, nullptr);
     CHECK(rc == SQLITE_OK);
-    sqlite3_bind_text(check_st, 1, "jpereiratrindade@gmail.com", -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(check_st, 1, test_email.c_str(), -1, SQLITE_TRANSIENT);
     int step_rc = sqlite3_step(check_st);
     CHECK(step_rc == SQLITE_ROW);
     const auto* hmac_txt = sqlite3_column_text(check_st, 0);
@@ -135,35 +137,35 @@ static void test_auth_service_full_lifecycle() {
     // 3. Test wrong codes and max 5 attempts lockout
     std::cout << "  [Step 3] wrong codes & lockout...\n";
     for (int attempt = 1; attempt <= 4; ++attempt) {
-        auto fail_res = svc.verify_code(db, "jpereiratrindade@gmail.com", "000000", "127.0.0.1");
+        auto fail_res = svc.verify_code(db, test_email, "000000", "127.0.0.1");
         CHECK(!fail_res.ok);
         CHECK(fail_res.status_code == 400);
         CHECK(fail_res.remaining_attempts == (5 - attempt));
     }
 
     // 5th failed attempt must block & invalidate the code
-    auto lock_res = svc.verify_code(db, "jpereiratrindade@gmail.com", "000000", "127.0.0.1");
+    auto lock_res = svc.verify_code(db, test_email, "000000", "127.0.0.1");
     CHECK(!lock_res.ok);
     CHECK(lock_res.status_code == 403); // Forbidden, blocked
 
     // Even with the correct code now, verification must be rejected because attempts exceeded
-    auto late_res = svc.verify_code(db, "jpereiratrindade@gmail.com", valid_code, "127.0.0.1");
+    auto late_res = svc.verify_code(db, test_email, valid_code, "127.0.0.1");
     CHECK(!late_res.ok);
 
     // 4. Request new code (must invalidate previous code)
     std::cout << "  [Step 4] request new code...\n";
-    auto req2 = svc.request_code(db, "jpereiratrindade@gmail.com", "127.0.0.1");
+    auto req2 = svc.request_code(db, test_email, "127.0.0.1");
     CHECK(req2.ok);
     std::string valid_code2 = req2.dev_code;
     CHECK(valid_code2 != valid_code);
 
     // 5. Successful verification creates session
     std::cout << "  [Step 5] verify valid code...\n";
-    auto ok_res = svc.verify_code(db, "jpereiratrindade@gmail.com", valid_code2, "127.0.0.1");
+    auto ok_res = svc.verify_code(db, test_email, valid_code2, "127.0.0.1");
     CHECK(ok_res.ok);
     CHECK(ok_res.status_code == 200);
     CHECK(!ok_res.session_token.empty());
-    CHECK(ok_res.user.email == "jpereiratrindade@gmail.com");
+    CHECK(ok_res.user.email == test_email);
     CHECK(ok_res.user.role == "admin");
 
     std::string token = ok_res.session_token;
@@ -186,11 +188,11 @@ static void test_auth_service_full_lifecycle() {
     std::cout << "  [Step 6] validate_session...\n";
     auto valid_user = svc.validate_session(db, token);
     CHECK(valid_user.has_value());
-    CHECK(valid_user->email == "jpereiratrindade@gmail.com");
+    CHECK(valid_user->email == test_email);
     CHECK(valid_user->role == "admin");
 
     // 7. Single use check: code cannot be verified again
-    auto reuse_res = svc.verify_code(db, "jpereiratrindade@gmail.com", valid_code2, "127.0.0.1");
+    auto reuse_res = svc.verify_code(db, test_email, valid_code2, "127.0.0.1");
     CHECK(!reuse_res.ok);
 
     // 8. Logout revokes session
@@ -200,16 +202,16 @@ static void test_auth_service_full_lifecycle() {
     CHECK(!after_logout.has_value());
 
     // 9. Deactivated user cannot authenticate
-    svc.set_user_active(db, "jpereiratrindade@gmail.com", false);
-    auto req_deactivated = svc.request_code(db, "jpereiratrindade@gmail.com", "127.0.0.1");
-    auto user_info = svc.find_user_by_email(db, "jpereiratrindade@gmail.com");
+    svc.set_user_active(db, test_email, false);
+    auto req_deactivated = svc.request_code(db, test_email, "127.0.0.1");
+    auto user_info = svc.find_user_by_email(db, test_email);
     CHECK(user_info.has_value() && !user_info->is_active);
 
     // 10. Audit log verified
     sqlite3_stmt* audit_st = nullptr;
     rc = sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM auth_audit_events WHERE email=?", -1, &audit_st, nullptr);
     CHECK(rc == SQLITE_OK);
-    sqlite3_bind_text(audit_st, 1, "jpereiratrindade@gmail.com", -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(audit_st, 1, test_email.c_str(), -1, SQLITE_TRANSIENT);
     CHECK(sqlite3_step(audit_st) == SQLITE_ROW);
     int audit_count = sqlite3_column_int(audit_st, 0);
     CHECK(audit_count >= 5);

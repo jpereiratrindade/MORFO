@@ -142,7 +142,14 @@ AuthSmtpConfig AuthSmtpConfig::from_environment() {
     const char* pass = std::getenv("MORFO_SMTP_PASS");
     if (pass && *pass) cfg.smtp_pass = pass;
     const char* f = std::getenv("MORFO_SMTP_FROM");
-    if (f && *f) cfg.smtp_from = f;
+    if (f && *f) {
+        cfg.smtp_from = f;
+    } else if (!cfg.smtp_user.empty()) {
+        cfg.smtp_from = cfg.smtp_user;
+    }
+    if (cfg.smtp_user.empty() && !cfg.smtp_from.empty()) {
+        cfg.smtp_user = cfg.smtp_from;
+    }
     const char* sec = std::getenv("MORFO_AUTH_SECRET");
     if (sec && *sec) {
         cfg.auth_secret = sec;
@@ -229,6 +236,12 @@ AuthSmtpService::AuthSmtpService(AuthSmtpConfig config)
 bool AuthSmtpService::send_email(const std::string& to_email, const std::string& code, std::string& err_out) {
     if (config_.simulated || config_.dev_mode) {
         return true;
+    }
+
+    if (config_.smtp_user.empty() || config_.smtp_pass.empty() || config_.smtp_from.empty()) {
+        err_out = "Configuração SMTP incompleta: remetente (MORFO_SMTP_USER / MORFO_SMTP_FROM) e senha (MORFO_SMTP_PASS) devem ser informados.";
+        std::cerr << "[MORFO SMTP ERROR] " << err_out << "\n";
+        return false;
     }
 
     std::ostringstream msg;

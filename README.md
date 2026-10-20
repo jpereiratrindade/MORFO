@@ -16,7 +16,7 @@ Consulte os documentos constitucionais e arquiteturais em [`docs/`](docs/):
 Instale as dependências necessárias no container de compilação ou sistema:
 
 ```bash
-cd /run/media/jpereiratrindade/labeco10T/dev/cpp/MORFO
+cd /caminho/para/MORFO
 sudo dnf install -y gcc-c++ cmake boost-devel sqlite-devel openssl-devel \
                     libpng-devel libjpeg-turbo-devel libtiff-devel python3
 ```
@@ -44,7 +44,7 @@ cp .env.example .env
 chmod 600 .env
 ```
 
-Edite o arquivo `.env`:
+Edite o arquivo `.env` preenchendo o remetente e a senha de aplicativo:
 
 ```ini
 # Configuração de Rede
@@ -53,13 +53,14 @@ MORFO_PORT=8091
 MORFO_DATA_DIR=./var
 
 # Envio de E-mail (Gmail SMTP ou corporativo)
+# O remetente e a senha devem ser configurados pelo operador do servidor:
 # Para o Gmail, gere uma "Senha de App" de 16 caracteres em:
 # https://myaccount.google.com/apppasswords
 MORFO_SMTP_HOST=smtp.gmail.com
 MORFO_SMTP_PORT=587
-MORFO_SMTP_USER=seu-email@gmail.com
+MORFO_SMTP_USER=remetente@gmail.com
 MORFO_SMTP_PASS=xxxx xxxx xxxx xxxx
-MORFO_SMTP_FROM=seu-email@gmail.com
+MORFO_SMTP_FROM=remetente@gmail.com
 
 # Segredo criptográfico fixo para HMAC das sessões (opcional, gerado aleatoriamente se ausente)
 MORFO_AUTH_SECRET=
@@ -81,10 +82,10 @@ O launcher [`run.sh`](run.sh) compila automaticamente qualquer alteração pende
 ./run.sh
 ```
 
-### Método B: Informando a senha diretamente na linha de comando
-Caso prefira não persistir a senha de e-mail no arquivo `.env`:
+### Método B: Informando remetente e senha diretamente na linha de comando
+Caso prefira não persistir credenciais de e-mail no arquivo `.env`:
 ```bash
-MORFO_SMTP_PASS="sua_senha_de_app" ./run.sh
+MORFO_SMTP_USER="remetente@gmail.com" MORFO_SMTP_PASS="sua_senha_de_app" ./run.sh
 ```
 
 ### Método C: Modo de Desenvolvimento Local (sem envio real de e-mail)
