@@ -218,12 +218,23 @@
       }
       state.metrics=metricResponse.data;
       await loadMetricLists();
-      renderPanel();showLayer('overlay');
-      message(`Execução ${id} carregada. Candidatos visuais; validação biológica pendente.`);
+      renderPanel();
+      const restored=await restoreConfirmedRefinement(id,epoch);
+      if(!restored){showLayer('overlay');message(`Execução ${id} carregada. Candidatos visuais; validação biológica pendente.`);}
     }catch(error){
       if(epoch!==state.generation)return;
       clearVisual();renderPanel();message(`Falha na consulta: ${error.message}`,'error');
     }
+  }
+
+  async function restoreConfirmedRefinement(baseRunId,epoch){
+    const response=await json(`/api/v1/images/${encodeURIComponent(state.imageId)}/refinements`);
+    if(epoch!==state.generation)return false;
+    const saved=(response.data||[]).find(item=>item.status==='CONFIRMED'&&item.base_profile_run_id===baseRunId&&(!state.imageMeta?.sha256||item.original_sha256===state.imageMeta.sha256));
+    if(!saved)return false;
+    state.refinementId=saved.id;state.layer='overlay';showLayer('overlay');
+    message(`Refinamento confirmado restaurado · revisão ${saved.revision_ordinal} · máscara consolidada ativa.`);
+    return true;
   }
 
   async function loadHistory(imageId,autoSelect=true) {

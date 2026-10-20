@@ -20,6 +20,8 @@ Os parâmetros são: `score_threshold`, `brightness_threshold`,
 
 - `POST /api/v1/images/{image}/refinements` com `base_profile_run_id` — cria
   rascunho a partir de uma máscara EXP-003 existente.
+- `GET /api/v1/images/{image}/refinements` — lista sessões persistidas, permitindo
+  restaurar automaticamente a confirmação mais recente após recarregar a página.
 - `GET /api/v1/refinements/{id}` — estado, proveniência e revisões ordenadas.
 - `POST /api/v1/refinements/{id}/preview` — devolve PNG sem persistir revisão.
 - `POST /api/v1/refinements/{id}/interventions` — confirma uma intervenção no
