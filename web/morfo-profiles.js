@@ -89,7 +89,7 @@
     }
     const metrics=renderMetrics();
     const note=node('p',{className:'morfo-method-note',text:'Morfometria descreve candidatos bidimensionais do EXP-003; não confirma identidade biológica. Diâmetros usam EDT centro a centro; objetos truncados são censurados.'});
-    const planned=node('p',{className:'morfo-planned',text:'Revisão pixel a pixel e descoberta geral de categorias: planejadas, ainda indisponíveis.'});
+    const planned=node('p',{className:'morfo-planned',text:'Refinamento regional disponível: selecione regiões, teste parâmetros, inclua ou exclua pixels e preserve as demais áreas.'});
     wrap.append(eyebrow,title,status,dl,dl2,links,metrics,note,planned);
     panel.replaceChildren(wrap);
   }
@@ -281,6 +281,7 @@
           <option value="discovery" disabled>Descoberta geral REA/RIT · planejada</option>
         </select></label>
         <button id="morfo-run" type="button" class="morfo-run">Executar perfil</button>
+        <button id="morfo-refine" type="button" class="morfo-refine" disabled>◫ Refinar regiões</button>
         <label for="morfo-history">Histórico de execuções<select id="morfo-history" disabled>
           <option value="">Nenhuma execução</option></select></label>
       </div>
@@ -298,6 +299,7 @@
     layer.draggable=false;
     canvas.append(layer);
     $('morfo-run').addEventListener('click',startProfile);
+    $('morfo-refine').addEventListener('click',()=>$('start-refinement')?.click());
     $('morfo-history').addEventListener('change',e=>selectRun(e.target.value));
     workspace.querySelectorAll('[data-morfo-layer]').forEach(b=>b.addEventListener('click',()=>showLayer(b.dataset.morfoLayer)));
     $('morfo-opacity').addEventListener('input',e=>{state.opacity=Number(e.target.value)/100;refreshLayers();});
@@ -326,6 +328,7 @@
     const picker=$('morfo-history');
     picker.replaceChildren(node('option',{value:'',text:'Consultando histórico...'}));picker.disabled=true;
     $('morfo-run').disabled=!imageId || !state.profileAvailable;
+    $('morfo-refine').disabled=!imageId || !state.profileAvailable;
     clearVisual();renderPanel();
     if(imageId)loadHistory(imageId);
   }
@@ -333,6 +336,7 @@
   function onImageClosed(){
     state.generation++;
     state.imageId=null;state.imageMeta=null;state.runs=[];state.calibrations=[];state.busy=false;
+    if($('morfo-refine'))$('morfo-refine').disabled=true;
     clearVisual();renderPanel();
   }
 
