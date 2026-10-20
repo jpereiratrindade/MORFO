@@ -165,7 +165,17 @@ git apply --reverse MORFO-ID-PATCH-001.patch
 
 ## 7. Evidência da Matriz de Testes (Gates OIDC-01 a OIDC-16)
 
-A suíte automatizada `tests/test_oidc.py` foi registrada no CTest como `morfo.oidc-security`. Todos os 16 gates foram validados com 100% de sucesso sem conexão externa (usando provedor Mock OIDC com chave RSA gerada localmente):
+A validação foi implementada em duas camadas complementares:
+1. **Testes Unitários C++ Nativos (`morfo.oidc.crypto` em `tests/test_ossl_rsa.cpp`):**
+   - Vetores de teste criptográfico PKCE RFC 7636 (Apêndice B) e Base64URL.
+   - Geração de par de chaves RSA-2048 via OpenSSL 3.5 `EVP_PKEY` e extração BIGNUM de parâmetros públicos ($n$, $e$).
+   - Assinatura digital RS256 com `EVP_DigestSign` e verificação oficial JWS via `morfo::oidc::verify_rsa_signature`.
+   - Testes negativos: payload adulterado, assinatura corrompida e chave incorreta.
+   - Ciclo de vida transacional com proteção estrita contra ataques de repetição (single-use semantics).
+   - Integridade transacional e eventos de auditoria da Migração 5 em banco SQLite em memória.
+
+2. **Suíte Ponta a Ponta OIDC (`morfo.oidc-security` em `tests/test_oidc.py`):**
+   - Mock OIDC integrado localmente cobrindo os 16 gates de segurança sem dependência de rede externa.
 
 | Gate | Cenário Testado | Resultado Observado | Estado |
 |---|---|---|:---:|
@@ -182,6 +192,7 @@ A suíte automatizada `tests/test_oidc.py` foi registrada no CTest como `morfo.o
 | **OIDC-11** | Logout e expiração | Sessão removida do banco, cookie expirado, `/images` retorna 401 | **APROVADO** |
 | **OIDC-12** | OIDC habilitado e request-code legado sem SMTP | Nenhum `dev_code` devolvido na resposta JSON | **APROVADO** |
 | **OIDC-13** | Inspeção de respostas JSON, metadados e logs | Segredos e tokens nunca vazam para o cliente | **APROVADO** |
-| **OIDC-14** | Testes anteriores (http-smoke, migrações, roots golden EXP-003) | 7/7 testes CTest verdes, sem regressão | **APROVADO** |
+| **OIDC-14** | Testes anteriores (http-smoke, migrações, roots golden EXP-003) | 8/8 testes CTest verdes, sem regressão | **APROVADO** |
 | **OIDC-15** | Reexecução da migração 5 e rollback | Migração 5 idempotente, tabelas íntegras | **APROVADO** |
 | **OIDC-16** | Google nega consentimento (`error=access_denied`) ou endpoint indisponível | Tratamento gracioso com redirect legível, sem sessão órfã | **APROVADO** |
+

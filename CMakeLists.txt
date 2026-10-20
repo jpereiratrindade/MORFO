@@ -78,6 +78,13 @@ if(BUILD_TESTING)
  endif()
  add_test(NAME morfo.root-metrics.001c COMMAND morfo-root-metrics-001c-tests)
 
+ add_executable(morfo-oidc-crypto-tests tests/test_ossl_rsa.cpp src/oidc.cpp)
+ target_include_directories(morfo-oidc-crypto-tests PRIVATE src ${BOOST_INCLUDE_DIR})
+ target_link_libraries(morfo-oidc-crypto-tests PRIVATE Threads::Threads OpenSSL::SSL OpenSSL::Crypto SQLite3::SQLite3)
+ target_compile_definitions(morfo-oidc-crypto-tests PRIVATE BOOST_ERROR_CODE_HEADER_ONLY BOOST_SYSTEM_NO_DEPRECATED)
+ target_compile_options(morfo-oidc-crypto-tests PRIVATE -UNDEBUG -Wall -Wextra -Wpedantic)
+ add_test(NAME morfo.oidc.crypto COMMAND morfo-oidc-crypto-tests)
+
  # Teste inteiramente sintetico, disponivel em qualquer clone do MORFO.
  add_executable(morfo-roots-core-tests profiles/roots/exp003/tests/core_tests.cpp)
  target_link_libraries(morfo-roots-core-tests PRIVATE morfo_roots_exp003)
