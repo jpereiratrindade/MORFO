@@ -17,6 +17,7 @@
 
 import hashlib
 import base64
+import io
 import json
 import os
 from pathlib import Path
@@ -30,6 +31,7 @@ import time
 import urllib.error
 import urllib.request
 import zlib
+import zipfile
 
 # Ensure loopback calls bypass system proxies (e.g. Squid/corporate environments)
 urllib.request.install_opener(urllib.request.build_opener(urllib.request.ProxyHandler({})))
@@ -496,6 +498,13 @@ def main():
             assert status == 200 and branch_mask == mask_data
             status, body, _ = req(base+f'/api/v1/refinements/{branch_id}/confirm','POST',b'',auth_headers)
             assert status == 200 and json.loads(body)['data']['status'] == 'CONFIRMED'
+            status, package, package_headers = req(base+f'/api/v1/refinements/{branch_id}/export.zip',headers=auth_headers)
+            assert status == 200 and package_headers.get('Content-Type') == 'application/zip' and 'attachment' in package_headers.get('Content-Disposition','')
+            with zipfile.ZipFile(io.BytesIO(package)) as archive:
+                assert set(archive.namelist()) == {'original.png','mask.png','overlay.png','metadata.json'}
+                assert archive.read('original.png') == candidate and archive.read('mask.png') == branch_mask
+                assert archive.read('overlay.png').startswith(b'\x89PNG')
+                assert json.loads(archive.read('metadata.json'))['data']['id'] == branch_id
             status, body, _ = req(base+f'/api/v1/refinements/{branch_id}/metrics','GET',headers=auth_headers)
             assert status == 200 and json.loads(body)['data'] is None
             status, body, _ = req(base+f'/api/v1/refinements/{branch_id}/metrics','POST',json.dumps({'scale_x':None,'scale_y':None,'diameter_bins':[]}).encode(),{'Content-Type':'application/json',**auth_headers})

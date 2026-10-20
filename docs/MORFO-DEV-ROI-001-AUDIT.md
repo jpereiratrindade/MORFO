@@ -48,7 +48,7 @@ explícita do usuário.
 
 ## Lacunas conhecidas
 
-Ainda faltam exportação em pacote único, otimização por recorte com contexto e conjunto público de imagens
+Ainda faltam otimização por recorte com contexto e conjunto público de imagens
 anotadas com precisão/recall/Dice/IoU. O teste golden privado cobre somente a
 reprodutibilidade EXP-003; não constitui validação biológica.
 

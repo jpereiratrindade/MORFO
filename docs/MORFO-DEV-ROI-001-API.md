@@ -35,6 +35,10 @@ Os parâmetros são: `score_threshold`, `brightness_threshold`,
 - `GET /api/v1/refinements/{id}/before` e `/difference` — máscara anterior e
   mapa RGB da última mudança (verde adicionado, vermelho removido).
 - `GET /api/v1/refinements/{id}/metadata` — metadados JSON reproduzíveis.
+- `GET /api/v1/refinements/{id}/export.zip` — pacote único da confirmação contendo
+  original preservado, `mask.png`, `overlay.png` e `metadata.json`. O ZIP usa
+  armazenamento sem compressão para preservar exatamente os bytes dos artefatos.
+  Nesta implementação em memória, o original está limitado a 512 MiB por pacote.
 - `POST /api/v1/refinements/{id}/metrics` — calcula e persiste morfometria sobre
   a máscara consolidada de uma sessão `CONFIRMED`; aceita o mesmo corpo de
   calibração da morfometria EXP-003.
