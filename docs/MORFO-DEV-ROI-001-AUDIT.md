@@ -41,6 +41,11 @@ web estão integrados. A prévia não persiste resultados e usa sequência de pe
 no cliente para impedir resposta antiga de substituir a atual. Confirmação congela
 o rascunho; revisões continuam disponíveis após reinício.
 
+O painel de configurações permite salvar, atualizar por nome, recuperar, comparar,
+excluir e restaurar os valores de referência. Carregar um preset apenas altera os
+controles locais; nenhum processamento ou padrão global é modificado até ação
+explícita do usuário.
+
 ## Lacunas conhecidas
 
 Ainda faltam exportação em pacote único, otimização por recorte com contexto e conjunto público de imagens

@@ -255,6 +255,12 @@
    </section>
    <aside class="refinement-controls">
     <label>Ação<select id="refinement-action"><option value="REPROCESS">Reprocessar região</option><option value="INCLUDE">É raiz · incluir</option><option value="EXCLUDE">Não é raiz · excluir</option></select></label>
+    <section class="refinement-presets" aria-labelledby="refinement-presets-title"><h3 id="refinement-presets-title">Configurações</h3>
+     <label>Configuração salva<select id="refinement-preset"><option value="">Valores de referência</option></select></label>
+     <label>Nome<input id="refinement-preset-name" type="text" maxlength="80" placeholder="Ex.: Solo de baixo contraste"></label>
+     <div><button class="button outline" id="refinement-preset-load" type="button">Carregar</button><button class="button outline" id="refinement-preset-save" type="button">Salvar atual</button><button class="button outline" id="refinement-preset-delete" type="button" disabled>Excluir</button><button class="button outline" id="refinement-restore-defaults" type="button">Restaurar referência</button></div>
+     <p id="refinement-preset-comparison" aria-live="polite">Valores de referência ativos.</p>
+    </section>
     <details open><summary>Parâmetros da referência</summary><div class="refinement-param-grid">
      <label>Limiar pontuação<input id="rp-score" type="number" min="0" max="255" value="140"></label><label>Limiar brilho<input id="rp-brightness" type="number" min="0" max="255" value="108"></label>
      <label>Área mínima<input id="rp-min-area" type="number" min="1" value="4"></label><label>Área máxima<input id="rp-max-area" type="number" min="1" value="2500"></label>

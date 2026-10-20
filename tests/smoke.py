@@ -433,6 +433,17 @@ def main():
             preset_id=json.loads(body)['data']['id']
             status, body, _ = req(base+'/api/v1/parameter-presets',headers=auth_headers)
             assert status == 200 and json.loads(body)['data'][0]['name'] == 'Contraste baixo'
+            updated_preset={**preset_body,'score_threshold':151}
+            status, body, _ = req(base+'/api/v1/parameter-presets','POST',json.dumps(updated_preset).encode(),{'Content-Type':'application/json',**auth_headers})
+            assert status == 201 and json.loads(body)['data']['id'] == preset_id and json.loads(body)['data']['parameters']['score_threshold'] == 151
+            invalid_preset={**preset_body,'name':'Inválido','min_component_area':3000,'max_component_area':10}
+            status, body, _ = req(base+'/api/v1/parameter-presets','POST',json.dumps(invalid_preset).encode(),{'Content-Type':'application/json',**auth_headers})
+            assert status == 422,(status,body)
+            disposable={**preset_body,'name':'Temporário'}
+            status, body, _ = req(base+'/api/v1/parameter-presets','POST',json.dumps(disposable).encode(),{'Content-Type':'application/json',**auth_headers})
+            disposable_id=json.loads(body)['data']['id']; assert status == 201
+            status, body, _ = req(base+f'/api/v1/parameter-presets/{disposable_id}','DELETE',b'',auth_headers)
+            assert status == 200 and json.loads(body)['data']['deleted'] is True
             status, body, _ = req(base+f'/api/v1/images/{analysis_image_id}/refinements','POST',json.dumps({'base_profile_run_id':profile_id}).encode(),{'Content-Type':'application/json',**auth_headers})
             assert status == 201, (status, body)
             refinement = json.loads(body)['data']; refinement_id = refinement['id']
@@ -512,6 +523,8 @@ def main():
             # User 2 catalog must be completely isolated (0 images initially)
             status,body,_=req(base+'/api/v1/images',headers=auth_headers2)
             assert status==200 and len(json.loads(body)['data'])==0, (status,body)
+            status,body,_=req(base+'/api/v1/parameter-presets',headers=auth_headers2)
+            assert status==200 and json.loads(body)['data']==[],(status,body)
 
             # User 2 cannot access or probe User 1's images (returns 404)
             status,body,_=req(base+'/api/v1/images/'+uid,headers=auth_headers2)
