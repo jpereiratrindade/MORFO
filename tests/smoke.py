@@ -423,6 +423,58 @@ def main():
             status, data, _ = req(base+f'/api/v1/images/{large_id}/profiles/roots-exp003', 'POST', b'', auth_headers)
             assert status == 422 and b'12 MP' in data, (status, data)
 
+            # Persistent regional refinement: independent edits, overlap, undo/redo and provenance.
+            status, body, _ = req(base+'/api/v1/refinement-parameters')
+            contract = json.loads(body)['data']
+            assert status == 200 and contract['defaults']['score_threshold'] == 140
+            preset_body = {**contract['defaults'], 'name':'Contraste baixo'}
+            status, body, _ = req(base+'/api/v1/parameter-presets','POST',json.dumps(preset_body).encode(),{'Content-Type':'application/json',**auth_headers})
+            assert status == 201, (status, body)
+            preset_id=json.loads(body)['data']['id']
+            status, body, _ = req(base+'/api/v1/parameter-presets',headers=auth_headers)
+            assert status == 200 and json.loads(body)['data'][0]['name'] == 'Contraste baixo'
+            status, body, _ = req(base+f'/api/v1/images/{analysis_image_id}/refinements','POST',json.dumps({'base_profile_run_id':profile_id}).encode(),{'Content-Type':'application/json',**auth_headers})
+            assert status == 201, (status, body)
+            refinement = json.loads(body)['data']; refinement_id = refinement['id']
+            assert refinement['original_sha256'] == hashlib.sha256(candidate).hexdigest()
+            include = {'intervention_type':'INCLUDE','selection_type':'rectangle','x':2,'y':2,'width':8,'height':7}
+            status, preview_data, _ = req(base+f'/api/v1/refinements/{refinement_id}/preview','POST',json.dumps(include).encode(),{'Content-Type':'application/json',**auth_headers})
+            assert status == 200 and preview_data.startswith(b'\x89PNG')
+            db=sqlite3.connect(Path(temp)/'morfo.sqlite3'); assert db.execute('SELECT COUNT(*) FROM morfo_refinement_revisions WHERE session_id=?',(refinement_id,)).fetchone()[0] == 1; db.close()
+            status, body, _ = req(base+f'/api/v1/refinements/{refinement_id}/interventions','POST',json.dumps(include).encode(),{'Content-Type':'application/json',**auth_headers})
+            assert status == 201, (status, body)
+            state = json.loads(body)['data']; assert len(state['revisions']) == 2 and state['revisions'][-1]['added_pixels'] >= 0
+            exclude = {'intervention_type':'EXCLUDE','selection_type':'polygon','points':[5,4,14,4,14,14,5,14]}
+            status, body, _ = req(base+f'/api/v1/refinements/{refinement_id}/interventions','POST',json.dumps(exclude).encode(),{'Content-Type':'application/json',**auth_headers})
+            state = json.loads(body)['data']; latest_id = state['current_revision_id']
+            assert status == 201 and len(state['revisions']) == 3 and state['revisions'][-1]['removed_pixels'] >= 0
+            status, mask_data, _ = req(base+f'/api/v1/refinements/{refinement_id}/mask',headers=auth_headers)
+            assert status == 200 and mask_data.startswith(b'\x89PNG')
+            status, overlay_data, _ = req(base+f'/api/v1/refinements/{refinement_id}/overlay',headers=auth_headers)
+            assert status == 200 and overlay_data.startswith(b'\x89PNG')
+            status, before_data, _ = req(base+f'/api/v1/refinements/{refinement_id}/before',headers=auth_headers)
+            assert status == 200 and before_data.startswith(b'\x89PNG')
+            status, difference_data, _ = req(base+f'/api/v1/refinements/{refinement_id}/difference',headers=auth_headers)
+            assert status == 200 and difference_data.startswith(b'\x89PNG') and difference_data != mask_data
+            status, metadata_data, metadata_headers = req(base+f'/api/v1/refinements/{refinement_id}/metadata',headers=auth_headers)
+            assert status == 200 and json.loads(metadata_data)['data']['id'] == refinement_id and 'attachment' in metadata_headers.get('Content-Disposition','')
+            status, body, _ = req(base+f'/api/v1/refinements/{refinement_id}/undo','POST',b'',auth_headers)
+            undone = json.loads(body)['data']; assert status == 200 and undone['current_revision_id'] != latest_id and undone['can_redo']
+            status, body, _ = req(base+f'/api/v1/refinements/{refinement_id}/redo','POST',b'',auth_headers)
+            redone = json.loads(body)['data']; assert status == 200 and redone['current_revision_id'] == latest_id
+            db=sqlite3.connect(Path(temp)/'morfo.sqlite3')
+            assert db.execute('SELECT COUNT(*) FROM morfo_refinement_revisions WHERE session_id=?',(refinement_id,)).fetchone()[0] == 3
+            try:
+                db.execute("UPDATE morfo_refinement_revisions SET intervention_type='INCLUDE' WHERE session_id=?",(refinement_id,))
+                raise AssertionError('immutable refinement revision unexpectedly changed')
+            except sqlite3.IntegrityError:
+                pass
+            db.close()
+            status, body, _ = req(base+f'/api/v1/refinements/{refinement_id}/confirm','POST',b'',auth_headers)
+            assert status == 200 and json.loads(body)['data']['status'] == 'CONFIRMED'
+            status, body, _ = req(base+f'/api/v1/refinements/{refinement_id}/interventions','POST',json.dumps(include).encode(),{'Content-Type':'application/json',**auth_headers})
+            assert status == 404, (status, body)
+
             # 7. Multi-user isolation verification (User 2)
             email2 = 'pesquisador2@embrapa.br'
             status,body,_=req(base+'/api/v1/auth/request-code','POST',json.dumps({'email':email2}).encode(),{'Content-Type':'application/json'})
@@ -514,6 +566,11 @@ def main():
             assert status==200 and recovered['regions'][0]['review']['label']=='UNKNOWN' and recovered['regions'][0]['review']['action']=='SUSPEND',(status,body)
             status,body,_=req(review_url,headers=restarted_headers1)
             assert status==200 and len(json.loads(body)['data'])==3,(status,body)
+            status,body,_=req(base+f'/api/v1/refinements/{refinement_id}',headers=restarted_headers1)
+            restored_refinement=json.loads(body)['data']
+            assert status==200 and restored_refinement['status']=='CONFIRMED' and restored_refinement['current_revision_id']==latest_id and len(restored_refinement['revisions'])==3,(status,body)
+            status,body,_=req(base+'/api/v1/parameter-presets',headers=restarted_headers1)
+            assert status==200 and any(item['id']==preset_id for item in json.loads(body)['data'])
 
             # Check User 2's isolated catalog after restart
             status,body,_=req(base+'/api/v1/images',headers=auth_headers2)

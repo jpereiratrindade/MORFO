@@ -204,6 +204,7 @@
           <option value="BASELINE_HEURISTIC">Baseline Heurístico (Estático)</option>
         </select>
         <button class="button primary" id="start-analysis" type="button">⚡ Analisar experimentalmente</button>
+        <button class="button outline" id="start-refinement" type="button">◫ Refinar máscara</button>
       </div>
     </div>
 
@@ -236,6 +237,36 @@
     </div>
     <div id="inspector-resize-handle" class="inspector-resize-handle" role="separator" tabindex="0" aria-label="Redimensionar janela de análise" title="Arraste para redimensionar; use setas; clique duplo para maximizar"></div>
   </section>
+</div>
+<div id="refinement-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="refinement-title">
+ <section class="modal refinement-modal">
+  <div class="modal-head"><div><span class="section-kicker">MORFO-ALG-RAIZ-001 · REFINAMENTO REGIONAL</span><h2 id="refinement-title">Classificação parametrizável</h2></div><button class="close" id="close-refinement" type="button" aria-label="Fechar">×</button></div>
+  <div class="refinement-layout">
+   <section class="refinement-image-panel">
+    <div class="refinement-toolbar">
+     <label>Seleção <select id="refinement-tool"><option value="rectangle">Retângulo</option><option value="polygon">Polígono</option><option value="brush">Pincel</option></select></label>
+     <label>Pincel <input id="refinement-brush" type="range" min="2" max="100" value="16"><span id="refinement-brush-value">16 px</span></label>
+     <label>Máscara <input id="refinement-opacity" type="range" min="0" max="100" value="65"><span id="refinement-opacity-value">65%</span></label>
+     <button class="button outline" id="refinement-clear" type="button">Limpar seleção</button>
+    </div>
+    <div id="refinement-stage" class="refinement-stage"><img id="refinement-image" alt="Máscara consolidada sobre imagem original"><canvas id="refinement-selection"></canvas></div>
+    <div class="refinement-comparison" aria-label="Comparação da intervenção"><figure><img id="refinement-before" alt="Máscara anterior"><figcaption>Antes</figcaption></figure><figure><img id="refinement-proposed" alt="Máscara consolidada proposta"><figcaption>Depois</figcaption></figure><figure><img id="refinement-difference" alt="Diferenças: verde adicionado, vermelho removido"><figcaption>Diferença · verde + / vermelho −</figcaption></figure></div>
+    <p id="refinement-status" class="refinement-status" aria-live="polite">Preparando…</p>
+   </section>
+   <aside class="refinement-controls">
+    <label>Ação<select id="refinement-action"><option value="REPROCESS">Reprocessar região</option><option value="INCLUDE">É raiz · incluir</option><option value="EXCLUDE">Não é raiz · excluir</option></select></label>
+    <details open><summary>Parâmetros da referência</summary><div class="refinement-param-grid">
+     <label>Limiar pontuação<input id="rp-score" type="number" min="0" max="255" value="140"></label><label>Limiar brilho<input id="rp-brightness" type="number" min="0" max="255" value="108"></label>
+     <label>Área mínima<input id="rp-min-area" type="number" min="1" value="4"></label><label>Área máxima<input id="rp-max-area" type="number" min="1" value="2500"></label>
+     <label>Alongamento<input id="rp-elongation" type="number" min="1" step="0.1" value="1.5"></label><label>Preenchimento<input id="rp-fill" type="number" min="0" max="1" step="0.01" value="0.45"></label>
+     <label>Peso top-hat<input id="rp-weight" type="number" min="0" max="16" value="2"></label><label>Limite pequeno<input id="rp-small" type="number" min="0" value="80"></label>
+    </div></details>
+    <div class="refinement-actions"><button class="button outline" id="refinement-preview" type="button">Testar</button><button class="button primary" id="refinement-apply" type="button">Aplicar região</button><button class="button outline" id="refinement-undo" type="button">↶ Desfazer</button><button class="button outline" id="refinement-redo" type="button">↷ Refazer</button><button class="button primary" id="refinement-confirm" type="button">Confirmar resultado</button></div>
+    <div><h3>Histórico</h3><ol id="refinement-history" class="refinement-history"></ol></div>
+    <div class="refinement-exports"><a id="refinement-export-mask" class="button outline" download>↓ Máscara</a><a id="refinement-export-overlay" class="button outline" download>↓ Overlay</a><a id="refinement-export-metadata" class="button outline" download>↓ Metadados</a></div>
+   </aside>
+  </div>
+ </section>
 </div>
 <div id="image-edit-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="edit-img-title"><section class="modal sm-card"><div class="modal-head"><div><span class="section-kicker">CURADORIA CIENTÍFICA</span><h2 id="edit-img-title">Editar metadados da imagem</h2></div><button class="close" id="close-edit-image" type="button" aria-label="Fechar">×</button></div><form id="edit-image-form" class="edit-form"><div class="modal-body-pad"><label class="field-label"><span>Identificador da amostra <small>Opcional</small></span><input type="text" id="edit-sample-id" maxlength="64" placeholder="Ex.: P01-T2-2026"></label><label class="field-label"><span>Data de captura <small>Opcional</small></span><input type="date" id="edit-capture-date"></label><label class="field-label"><span>Nome do arquivo <small>Obrigatório</small></span><input type="text" id="edit-filename" maxlength="255" required></label></div><div class="modal-foot-actions"><button type="button" class="button outline" id="btn-cancel-edit-image">Cancelar</button><button type="submit" class="button primary" id="btn-save-edit-image">Salvar alterações</button></div></form></section></div>
 <div id="image-delete-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="del-img-title"><section class="modal sm-card"><div class="modal-head"><div><span class="section-kicker">CONFIRMAÇÃO DE EXCLUSÃO</span><h2 id="del-img-title">Excluir imagem do acervo</h2></div><button class="close" id="close-delete-image" type="button" aria-label="Fechar">×</button></div><div class="modal-body-pad"><p>Tem certeza de que deseja excluir a imagem <strong id="delete-image-name"></strong>?</p><div class="notice"><strong>Preservação Rastreável</strong><p>A exclusão é suave (soft-delete): o registro sai do catálogo ativo e do manifesto, mantendo o histórico de auditoria e a integridade dos dados.</p></div></div><div class="modal-foot-actions"><button type="button" class="button outline" id="btn-cancel-delete-image">Cancelar</button><button type="button" class="button danger-btn" id="btn-confirm-delete-image">Confirmar exclusão</button></div></section></div>

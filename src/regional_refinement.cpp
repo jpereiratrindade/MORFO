@@ -1,0 +1,19 @@
+#include "regional_refinement.hpp"
+#include <algorithm>
+#include <cmath>
+#include <stdexcept>
+#include <sstream>
+
+namespace morfo::refinement {namespace {
+Mask blank(int w,int h){if(w<=0||h<=0)throw std::invalid_argument("Dimensoes invalidas");return {w,h,std::vector<std::uint8_t>(std::size_t(w)*h)};}
+void same(const Mask& a,const Mask& b){if(a.width!=b.width||a.height!=b.height||a.pixels.size()!=b.pixels.size())throw std::invalid_argument("Mascaras incompativeis");}
+}
+Selection rectangle(std::string id,int w,int h,int x,int y,int sw,int sh){if(sw<=0||sh<=0)throw std::invalid_argument("Retangulo vazio");auto m=blank(w,h);const int x0=std::clamp(x,0,w),y0=std::clamp(y,0,h),x1=std::clamp(x+sw,0,w),y1=std::clamp(y+sh,0,h);for(int py=y0;py<y1;++py)for(int px=x0;px<x1;++px)m.pixels[std::size_t(py)*w+px]=255;std::ostringstream g;g<<"{\"x\":"<<x<<",\"y\":"<<y<<",\"width\":"<<sw<<",\"height\":"<<sh<<'}';return {std::move(id),"rectangle",g.str(),std::move(m)};}
+Selection polygon(std::string id,int w,int h,const std::vector<std::pair<double,double>>& p){if(p.size()<3)throw std::invalid_argument("Poligono requer tres pontos");auto m=blank(w,h);for(int y=0;y<h;++y)for(int x=0;x<w;++x){bool in=false;for(std::size_t i=0,j=p.size()-1;i<p.size();j=i++){const auto [xi,yi]=p[i];const auto [xj,yj]=p[j];if(((yi>y+.5)!=(yj>y+.5))&&(x+.5<(xj-xi)*(y+.5-yi)/(yj-yi)+xi))in=!in;}if(in)m.pixels[std::size_t(y)*w+x]=255;}std::ostringstream g;g<<"{\"points\":[";for(std::size_t i=0;i<p.size();++i){if(i)g<<',';g<<'['<<p[i].first<<','<<p[i].second<<']';}g<<"]}";return {std::move(id),"polygon",g.str(),std::move(m)};}
+Selection brush(std::string id,int w,int h,const std::vector<std::pair<double,double>>& p,double diameter){if(p.empty()||diameter<=0)throw std::invalid_argument("Pincel invalido");auto m=blank(w,h);const double r=diameter/2;auto dab=[&](double cx,double cy){const int x0=std::max(0,int(std::floor(cx-r))),x1=std::min(w-1,int(std::ceil(cx+r))),y0=std::max(0,int(std::floor(cy-r))),y1=std::min(h-1,int(std::ceil(cy+r)));for(int y=y0;y<=y1;++y)for(int x=x0;x<=x1;++x)if(std::hypot(x+.5-cx,y+.5-cy)<=r)m.pixels[std::size_t(y)*w+x]=255;};dab(p.front().first,p.front().second);for(std::size_t i=1;i<p.size();++i){const double d=std::hypot(p[i].first-p[i-1].first,p[i].second-p[i-1].second);const int steps=std::max(1,int(std::ceil(d/std::max(1.,r/2))));for(int s=1;s<=steps;++s){const double t=double(s)/steps;dab(p[i-1].first+(p[i].first-p[i-1].first)*t,p[i-1].second+(p[i].second-p[i-1].second)*t);}}std::ostringstream g;g<<"{\"diameter\":"<<diameter<<",\"point_count\":"<<p.size()<<'}';return {std::move(id),"brush",g.str(),std::move(m)};}
+Mask merge(const Mask& current,const Mask& proposed,const Mask& region){same(current,proposed);same(current,region);Mask out=current;for(std::size_t i=0;i<out.pixels.size();++i)if(region.pixels[i])out.pixels[i]=proposed.pixels[i]?255:0;return out;}
+Mask apply(const Mask& current,const Mask& region,Kind kind,const Mask* proposed){same(current,region);if(kind==Kind::Reprocess){if(!proposed)throw std::invalid_argument("Reprocessamento requer mascara proposta");return merge(current,*proposed,region);}Mask out=current;for(std::size_t i=0;i<out.pixels.size();++i)if(region.pixels[i])out.pixels[i]=kind==Kind::Include?255:0;return out;}
+Timeline::Timeline(Mask initial){items_.push_back({"initial","","","{}","",Kind::Reprocess,std::move(initial)});}
+const Revision& Timeline::commit(Revision r){same(items_[cursor_].mask,r.mask);items_.resize(cursor_+1);r.previous_id=items_[cursor_].id;items_.push_back(std::move(r));cursor_=items_.size()-1;return items_.back();}
+bool Timeline::undo(){if(cursor_==0)return false;--cursor_;return true;}bool Timeline::redo(){if(cursor_+1>=items_.size())return false;++cursor_;return true;}const Revision& Timeline::current()const{return items_.at(cursor_);}
+}

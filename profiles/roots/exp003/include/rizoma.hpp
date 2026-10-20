@@ -12,6 +12,19 @@ struct Gray {int width=0,height=0;std::vector<std::uint8_t> pixels;};
 struct Component {int area=0, min_x=0, min_y=0, max_x=0, max_y=0; double elongation=0.0;};
 struct Summary {std::size_t pixels=0, components=0, bottom10=0;std::vector<int> largest;};
 struct Params {int top_hat_radius=8, cell=32, context=64, border=10; double seed_z=2.4, min_tophat=7.0; int min_component_area=4;};
+// MORFO-ALG-RAIZ-001 v0.2.0 reference routine. This is deliberately distinct
+// from Params/EXP-003 and must never silently replace that detector.
+struct ReferenceParams {
+ int score_threshold=140,brightness_threshold=108;
+ int min_component_area=4,max_component_area=2500;
+ double min_elongation=1.5;
+ int top_hat_width=17,top_hat_height=17,top_hat_weight=2;
+ int small_component_limit=80;
+ double fill_factor=0.45;
+ int median_width=3,median_height=3,opening_width=3,opening_height=3;
+ bool operator==(const ReferenceParams&) const = default;
+};
+void validate(const ReferenceParams& opts);
 Image read_rgb(const fs::path& p);
 void write_png(const fs::path& p,const Image& img);
 void write_png(const fs::path& p,const Gray& img);
@@ -22,6 +35,7 @@ Gray grayscale(const Image& img);
 Gray tophat(const Gray& gray,int radius);
 Gray legacy_score(const Image& img,const Gray& g,const Gray& th);
 Gray legacy_mask(const Image& img,const Gray& g,const Gray& th);
+Gray reference_mask(const Image& img,const ReferenceParams& opts);
 struct Adaptive {Gray zview, mask;std::size_t border_abstentions=0;};
 Adaptive adaptive_detect(const Image& img,const Gray& g,const Gray& th,const Params& opts);
 std::vector<Component> components(const Gray& mask);

@@ -150,6 +150,28 @@ Gray legacy_mask(const Image& img,const Gray& g,const Gray& th){
  for(std::size_t i=0;i<mask.pixels.size();i++){int label=identified.labels[i];mask.pixels[i]=label>=0&&keep[label]?255:0;}
  return morph_open(median3(mask),1);
 }
+void validate(const ReferenceParams& o){
+ auto odd=[](int value){return value>0&&(value%2)==1;};
+ if(o.score_threshold<0||o.score_threshold>255||o.brightness_threshold<0||o.brightness_threshold>255)
+  throw std::invalid_argument("Limiares devem estar entre 0 e 255");
+ if(o.min_component_area<1||o.max_component_area<o.min_component_area)
+  throw std::invalid_argument("Intervalo de area de componentes invalido");
+ if(o.min_elongation<1.0||o.fill_factor<0.0||o.fill_factor>1.0||o.small_component_limit<0)
+  throw std::invalid_argument("Parametros geometricos invalidos");
+ if(!odd(o.top_hat_width)||!odd(o.top_hat_height)||o.top_hat_width!=o.top_hat_height||o.top_hat_weight<0||o.top_hat_weight>16)
+  throw std::invalid_argument("Top-hat deve ser elipse quadrada impar; peso entre 0 e 16");
+ if(o.median_width!=3||o.median_height!=3||o.opening_width!=3||o.opening_height!=3)
+  throw std::invalid_argument("Versao 0.2.0 suporta mediana e abertura 3x3");
+}
+Gray reference_mask(const Image& img,const ReferenceParams& o){
+ validate(o);const auto g=grayscale(img);const auto th=tophat(g,(o.top_hat_width-1)/2);
+ Gray score=make_gray(img.width,img.height),mask=make_gray(img.width,img.height);
+ for(std::size_t i=0;i<score.pixels.size();++i){const auto& c=img.pixels[i];const int lo=std::min({c.r,c.g,c.b}),hi=std::max({c.r,c.g,c.b});score.pixels[i]=U8(std::clamp(int(g.pixels[i])+o.top_hat_weight*int(th.pixels[i])-(hi-lo)/2,0,255));mask.pixels[i]=(score.pixels[i]>o.score_threshold||g.pixels[i]>o.brightness_threshold)?255:0;}
+ const auto identified=analyze(mask);std::vector<bool> keep(identified.items.size(),false);
+ for(std::size_t label=0;label<identified.items.size();++label){const auto& c=identified.items[label];const int w=c.max_x-c.min_x+1,h=c.max_y-c.min_y+1;const double aspect=std::max(double(w)/h,double(h)/w),fill=double(c.area)/(w*h);keep[label]=c.area>=o.min_component_area&&c.area<=o.max_component_area&&(aspect>=o.min_elongation||c.area<o.small_component_limit||fill<o.fill_factor);}
+ for(std::size_t i=0;i<mask.pixels.size();++i){const int label=identified.labels[i];mask.pixels[i]=label>=0&&keep[label]?255:0;}
+ return morph_open(median3(mask),1);
+}
 Adaptive adaptive_detect(const Image& img,const Gray& g,const Gray& th,const Params& opts){
  if(opts.cell<8||opts.context<opts.cell||opts.border<0)throw std::runtime_error("Parâmetros de matriz inválidos");
  assert_shape(g,th);const int w=img.width,h=img.height;

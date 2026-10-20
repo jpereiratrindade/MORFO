@@ -78,6 +78,35 @@ void create_schema(sqlite3* db) {
   deleted_at TEXT
  );
  CREATE INDEX IF NOT EXISTS idx_morfo_image_calibrations_image ON morfo_image_calibrations(image_id,created_at DESC);
+ CREATE TABLE IF NOT EXISTS morfo_parameter_presets (
+  id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),profile TEXT NOT NULL,
+  name TEXT NOT NULL,version TEXT NOT NULL,parameters_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,updated_at TEXT NOT NULL,UNIQUE(user_id,profile,name)
+ );
+ CREATE TABLE IF NOT EXISTS morfo_refinement_sessions (
+  id TEXT PRIMARY KEY,image_id TEXT NOT NULL REFERENCES images(id),user_id TEXT NOT NULL REFERENCES users(id),
+  base_profile_run_id TEXT NOT NULL REFERENCES morfo_profile_runs(id),original_sha256 TEXT NOT NULL,
+  algorithm TEXT NOT NULL,algorithm_version TEXT NOT NULL,current_revision_id TEXT,
+  redo_revision_id TEXT,status TEXT NOT NULL CHECK(status IN('DRAFT','CONFIRMED')),
+  created_at TEXT NOT NULL,updated_at TEXT NOT NULL
+ );
+ CREATE TABLE IF NOT EXISTS morfo_refinement_selections (
+  id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES morfo_refinement_sessions(id),
+  type TEXT NOT NULL CHECK(type IN('rectangle','polygon','brush')),
+  geometry_json TEXT NOT NULL,mask_relative_path TEXT NOT NULL,mask_sha256 TEXT NOT NULL,
+  created_at TEXT NOT NULL
+ );
+ CREATE TABLE IF NOT EXISTS morfo_refinement_revisions (
+  id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES morfo_refinement_sessions(id),
+  previous_revision_id TEXT REFERENCES morfo_refinement_revisions(id),selection_id TEXT REFERENCES morfo_refinement_selections(id),
+  ordinal INTEGER NOT NULL,intervention_type TEXT NOT NULL CHECK(intervention_type IN('BASE','REPROCESS','INCLUDE','EXCLUDE')),
+  parameters_json TEXT NOT NULL,mask_relative_path TEXT NOT NULL,mask_sha256 TEXT NOT NULL,
+  added_pixels INTEGER NOT NULL,removed_pixels INTEGER NOT NULL,created_at TEXT NOT NULL,
+  UNIQUE(session_id,ordinal)
+ );
+ CREATE INDEX IF NOT EXISTS idx_morfo_refinement_session ON morfo_refinement_revisions(session_id,ordinal);
+ CREATE TRIGGER IF NOT EXISTS morfo_refinement_revision_no_update BEFORE UPDATE ON morfo_refinement_revisions BEGIN SELECT RAISE(ABORT,'refinement revisions are immutable'); END;
+ CREATE TRIGGER IF NOT EXISTS morfo_refinement_revision_no_delete BEFORE DELETE ON morfo_refinement_revisions BEGIN SELECT RAISE(ABORT,'refinement revisions are immutable'); END;
  )SQL";
  char* error=nullptr;
  if(sqlite3_exec(db,schema,nullptr,nullptr,&error)!=SQLITE_OK){

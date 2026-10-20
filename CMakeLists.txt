@@ -45,8 +45,13 @@ add_library(morfo_root_metrics STATIC src/morfo_root_metrics.cpp)
 target_include_directories(morfo_root_metrics PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_compile_options(morfo_root_metrics PRIVATE -Wall -Wextra -Wpedantic)
 
+add_library(morfo_regional_refinement STATIC src/regional_refinement.cpp)
+target_include_directories(morfo_regional_refinement PUBLIC ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/profiles/roots/exp003/include)
+target_link_libraries(morfo_regional_refinement PUBLIC morfo_roots_exp003)
+target_compile_options(morfo_regional_refinement PRIVATE -Wall -Wextra -Wpedantic)
+
 add_executable(morfo-server src/main.cpp src/database.cpp src/analysis.cpp src/tiles.cpp src/learning.cpp src/morfo_profiles.cpp)
-target_link_libraries(morfo-server PRIVATE morfo_roots_exp003 morfo_root_metrics)
+target_link_libraries(morfo-server PRIVATE morfo_roots_exp003 morfo_root_metrics morfo_regional_refinement)
 target_include_directories(morfo-server PRIVATE ${BOOST_INCLUDE_DIR})
 target_link_libraries(morfo-server PRIVATE Threads::Threads OpenSSL::Crypto SQLite3::SQLite3 PNG::PNG JPEG::JPEG TIFF::TIFF)
 target_compile_definitions(morfo-server PRIVATE BOOST_ERROR_CODE_HEADER_ONLY BOOST_SYSTEM_NO_DEPRECATED)
@@ -78,6 +83,10 @@ if(BUILD_TESTING)
   target_compile_options(morfo-roots-core-tests PRIVATE -UNDEBUG)
  endif()
  add_test(NAME morfo.roots.exp003.core COMMAND morfo-roots-core-tests)
+ add_executable(morfo-regional-refinement-tests tests/regional_refinement.cpp)
+ target_link_libraries(morfo-regional-refinement-tests PRIVATE morfo_regional_refinement)
+ target_compile_options(morfo-regional-refinement-tests PRIVATE -UNDEBUG -Wall -Wextra -Wpedantic)
+ add_test(NAME morfo.regional-refinement COMMAND morfo-regional-refinement-tests)
 
  # A imagem cientifica real e privada. Nao deve entrar no Git publico.
  if(EXISTS "${CMAKE_SOURCE_DIR}/tests/fixtures/private/monolito_rgb.png" AND
