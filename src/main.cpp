@@ -620,6 +620,25 @@ static std::string analysis_runs_json(const App& app,const std::string& image_id
  std::string out="{\"data\":[";bool first=true;while(sqlite3_step(runs.p)==SQLITE_ROW){if(!first)out+=',';first=false;out+="{\"id\":"+q(col(runs.p,0))+",\"algorithm_version\":"+q(col(runs.p,1))+",\"status\":"+q(col(runs.p,2))+",\"created_at\":"+q(col(runs.p,3))+",\"completed_at\":"+q(col(runs.p,4))+",\"region_count\":"+std::to_string(sqlite3_column_int64(runs.p,5))+",\"notes\":"+q(col(runs.p,6))+"}";}return out+"]}";
 }
 
+static std::string evaluation_overview_json(const App& app,const std::string& user_id){
+ Db db(app.root/"morfo.sqlite3");
+ auto count=[&](const char* sql){Stmt st(db.p,sql);st.bind(1,user_id);if(sqlite3_step(st.p)!=SQLITE_ROW)throw Failure("Cannot read evaluation overview");return sqlite3_column_int64(st.p,0);};
+ const auto protocols=count("SELECT COUNT(*) FROM evaluation_protocols WHERE owner_user_id=?");
+ const auto datasets=count("SELECT COUNT(*) FROM evaluation_datasets d JOIN evaluation_protocols p ON p.id=d.protocol_id WHERE p.owner_user_id=?");
+ const auto runs=count("SELECT COUNT(*) FROM evaluation_runs r JOIN evaluation_protocols p ON p.id=r.protocol_id WHERE p.owner_user_id=?");
+ const auto completed=count("SELECT COUNT(*) FROM evaluation_runs r JOIN evaluation_protocols p ON p.id=r.protocol_id WHERE p.owner_user_id=? AND r.status='COMPLETED'");
+ Stmt summaries(db.p,R"SQL(
+SELECT s.id,s.run_id,s.metric,s.estimate,s.ci_lower,s.ci_upper,s.sample_count,s.method,s.created_at,
+       r.algorithm,r.algorithm_version,p.title
+ FROM evaluation_summaries s JOIN evaluation_runs r ON r.id=s.run_id
+ JOIN evaluation_protocols p ON p.id=r.protocol_id
+ WHERE p.owner_user_id=? ORDER BY s.created_at DESC,s.rowid DESC LIMIT 50
+)SQL");summaries.bind(1,user_id);
+ std::ostringstream out;out<<"{\"schema\":\"morfo.evaluation-overview.v1\",\"data\":{\"counts\":{\"protocols\":"<<protocols<<",\"datasets\":"<<datasets<<",\"runs\":"<<runs<<",\"completed\":"<<completed<<"},\"summaries\":[";
+ bool first=true;while(sqlite3_step(summaries.p)==SQLITE_ROW){if(!first)out<<',';first=false;out<<"{\"id\":"<<q(col(summaries.p,0))<<",\"run_id\":"<<q(col(summaries.p,1))<<",\"metric\":"<<q(col(summaries.p,2))<<",\"estimate\":"<<sqlite3_column_double(summaries.p,3)<<",\"ci_lower\":"<<(sqlite3_column_type(summaries.p,4)==SQLITE_NULL?"null":std::to_string(sqlite3_column_double(summaries.p,4)))<<",\"ci_upper\":"<<(sqlite3_column_type(summaries.p,5)==SQLITE_NULL?"null":std::to_string(sqlite3_column_double(summaries.p,5)))<<",\"sample_count\":"<<sqlite3_column_int64(summaries.p,6)<<",\"method\":"<<q(col(summaries.p,7))<<",\"created_at\":"<<q(col(summaries.p,8))<<",\"algorithm\":"<<q(col(summaries.p,9))<<",\"algorithm_version\":"<<q(col(summaries.p,10))<<",\"protocol\":"<<q(col(summaries.p,11))<<'}';}
+ out<<"]}}";return out.str();
+}
+
 static std::string update_analysis_run(const App& app,const std::string& run_id,const std::string& user_id,const std::string& body){
  const std::string status=json_extract_string(body,"status");
  const std::string notes=json_extract_string(body,"notes");
@@ -1414,7 +1433,7 @@ static Response handle(const App& app,const http::request<http::string_body>& re
  if(req.method()==http::verb::get&&p=="/api/v1/refinement-parameters")return respond(http::status::ok,v,refinement_parameters_contract());
 
  // Protected routes
- if(p=="/api/v1/images"||p=="/api/v1/root-metrics"||p=="/api/v1/parameter-presets"||p=="/api/v1/export/manifest.csv"||p.starts_with("/api/v1/images/")||p.starts_with("/api/v1/refinements/")||p.starts_with("/api/v1/parameter-presets/")||p.starts_with("/api/v1/analysis-regions/")||p.starts_with("/api/v1/analysis-runs/")||p.starts_with("/api/v1/root-metrics/")||p.starts_with("/api/v1/calibrations/")){
+ if(p=="/api/v1/images"||p=="/api/v1/root-metrics"||p=="/api/v1/evaluation/overview"||p=="/api/v1/parameter-presets"||p=="/api/v1/export/manifest.csv"||p.starts_with("/api/v1/images/")||p.starts_with("/api/v1/refinements/")||p.starts_with("/api/v1/parameter-presets/")||p.starts_with("/api/v1/analysis-regions/")||p.starts_with("/api/v1/analysis-runs/")||p.starts_with("/api/v1/root-metrics/")||p.starts_with("/api/v1/calibrations/")){
   auto user=authenticate(app,req);
   if(!user){
    return problem(v,http::status::unauthorized,"Autenticação necessária. Solicite uma chave de acesso para seu e-mail.");
@@ -1422,6 +1441,7 @@ static Response handle(const App& app,const http::request<http::string_body>& re
   if(req.method()==http::verb::get&&p=="/api/v1/images")return respond(http::status::ok,v,all_images(app,user->id));
   if(req.method()==http::verb::get&&p=="/api/v1/export/manifest.csv")return respond(http::status::ok,v,manifest(app,user->id),"text/csv; charset=utf-8");
   if(req.method()==http::verb::get&&p=="/api/v1/root-metrics")return respond(http::status::ok,v,all_morfo_metric_runs_json(app,user->id));
+  if(req.method()==http::verb::get&&p=="/api/v1/evaluation/overview")return respond(http::status::ok,v,evaluation_overview_json(app,user->id));
   if(p=="/api/v1/parameter-presets"){
    try{if(req.method()==http::verb::get)return respond(http::status::ok,v,parameter_presets(app,user->id));if(req.method()==http::verb::post){if(req[http::field::content_type].find("application/json")!=0)return problem(v,http::status::unsupported_media_type,"Use application/json");return respond(http::status::created,v,save_parameter_preset(app,user->id,req.body()));}}catch(const std::exception& e){return problem(v,http::status::unprocessable_entity,e.what());}
   }

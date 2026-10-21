@@ -215,6 +215,14 @@ def main():
             assert status==200 and json.loads(body)['authenticated'] is True
             assert json.loads(body)['user']['email']==email
 
+            # MORFO-AVALIA exposes only persisted evidence; fresh workspaces are honestly empty.
+            status,body,_=req(base+'/api/v1/evaluation/overview',headers=auth_headers)
+            assert status==200,(status,body)
+            evaluation=json.loads(body)
+            assert evaluation['schema']=='morfo.evaluation-overview.v1'
+            assert evaluation['data']['counts']=={'protocols':0,'datasets':0,'runs':0,'completed':0}
+            assert evaluation['data']['summaries']==[]
+
             # Irregular dimensions cross tile boundaries and exercise EXP-004 edge tiles.
             data=patterned_png()
             upload=base+'/api/v1/images?filename=campo.png&sample_id=P01-T2&capture_date=2026-10-14'

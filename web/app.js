@@ -20,7 +20,7 @@ const h = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;'
 const number = new Intl.NumberFormat('pt-BR');
 let images = [], selectedFiles = [], rootMetricRecords = [], current = null, mode = 'original', currentUser = null, currentAnalysis = null, analysisRuns = [], selectedRegion = null;
 let viewer = {imageId:null, manifest:null, scale:1, x:0, y:0, fit:true, drag:null, revision:0, frame:0};
-const viewNames = {acervo:'Acervo de imagens',recebimento:'Recebimento',analises:'Análises radiculares',integridade:'Integridade e origem',sobre:'Sobre o MORFO',usuarios:'Gestão de Usuários & Acesso'};
+const viewNames = {acervo:'Acervo de imagens',recebimento:'Recebimento',analises:'Análises radiculares',avaliacao:'Avaliação científica',integridade:'Integridade e origem',sobre:'Sobre o MORFO',usuarios:'Gestão de Usuários & Acesso'};
 
 const STRATEGY_DESCRIPTIONS = {
   BAYESIAN_CALIBRATED: {
@@ -74,7 +74,19 @@ function nav(view){
   location.hash = view;
   window.scrollTo(0, 0);
   if(view==='analises'){showRootAnalysisCatalog();loadRootMetricRecords();}
+  if(view==='avaliacao')loadEvaluation();
   if(view==='usuarios'){loadUsers();}
+}
+
+async function loadEvaluation(){
+ const target=$('evaluation-results');if(!target)return;
+ target.innerHTML='<div class="empty"><h3>Carregando evidências…</h3></div>';
+ try{
+  const payload=await api('/api/v1/evaluation/overview'),data=payload.data||{},counts=data.counts||{},summaries=data.summaries||[];
+  $('eval-protocols').textContent=number.format(counts.protocols||0);$('eval-datasets').textContent=number.format(counts.datasets||0);$('eval-runs').textContent=number.format(counts.runs||0);$('eval-completed').textContent=number.format(counts.completed||0);
+  if(!summaries.length){target.innerHTML='<div class="empty evaluation-empty"><h3>Nenhuma conclusão fabricada.</h3><p>Fundação pronta. Primeiro protocolo e conjunto de referência ainda precisam ser constituídos; até lá, painel permanece honestamente vazio.</p></div>';return;}
+  target.innerHTML=`<div class="evaluation-grid">${summaries.map(item=>`<article class="evaluation-card"><header><span>${h(item.metric)}</span><small>${h(item.protocol)}</small></header><strong>${Number(item.estimate).toLocaleString('pt-BR',{maximumFractionDigits:4})}</strong><p>${item.ci_lower==null?'Intervalo não registrado':`IC 95% · ${Number(item.ci_lower).toLocaleString('pt-BR',{maximumFractionDigits:4})} — ${Number(item.ci_upper).toLocaleString('pt-BR',{maximumFractionDigits:4})}`}</p><footer>${h(item.algorithm)} ${h(item.algorithm_version)} · n=${number.format(item.sample_count)}</footer></article>`).join('')}</div>`;
+ }catch(error){target.innerHTML=`<div class="empty"><h3>Falha ao carregar avaliação</h3><p>${h(error.message)}</p></div>`;}
 }
 
 async function api(path, options = {}){
@@ -1987,6 +1999,7 @@ restoreInspectorSize();
 
 for(const b of document.querySelectorAll('[data-view]')) b.addEventListener('click', () => nav(b.dataset.view));
 $('hero-upload').onclick = () => nav('recebimento');
+if($('refresh-evaluation')) $('refresh-evaluation').onclick=loadEvaluation;
 $('refresh').onclick = refresh;
 $('refresh-root-analyses').onclick = loadRootMetricRecords;
 $('root-analysis-search').oninput = renderRootMetricRecords;
@@ -2385,4 +2398,3 @@ if($('refresh-audit')) $('refresh-audit').onclick = loadUsers;
 if($('user-search')) $('user-search').oninput = renderUsersTable;
 if($('user-role-filter')) $('user-role-filter').onchange = renderUsersTable;
 if($('user-status-filter')) $('user-status-filter').onchange = renderUsersTable;
-
