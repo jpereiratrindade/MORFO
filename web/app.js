@@ -79,14 +79,27 @@ function nav(view){
 }
 
 async function loadEvaluation(){
- const target=$('evaluation-results');if(!target)return;
- target.innerHTML='<div class="empty"><h3>Carregando evidências…</h3></div>';
+ const target=$('evaluation-results'),protocolTarget=$('evaluation-protocol-list');if(!target)return;
+ target.innerHTML='<div class="empty"><h3>Carregando evidências…</h3></div>';protocolTarget.innerHTML='<div class="empty"><h3>Carregando protocolos…</h3></div>';
  try{
-  const payload=await api('/api/v1/evaluation/overview'),data=payload.data||{},counts=data.counts||{},summaries=data.summaries||[];
+  const [payload,protocolPayload]=await Promise.all([api('/api/v1/evaluation/overview'),api('/api/v1/evaluation/protocols')]),data=payload.data||{},counts=data.counts||{},summaries=data.summaries||[],protocols=protocolPayload.data||[];
   $('eval-protocols').textContent=number.format(counts.protocols||0);$('eval-datasets').textContent=number.format(counts.datasets||0);$('eval-runs').textContent=number.format(counts.runs||0);$('eval-completed').textContent=number.format(counts.completed||0);
+  renderEvaluationProtocols(protocols);
   if(!summaries.length){target.innerHTML='<div class="empty evaluation-empty"><h3>Nenhuma conclusão fabricada.</h3><p>Fundação pronta. Primeiro protocolo e conjunto de referência ainda precisam ser constituídos; até lá, painel permanece honestamente vazio.</p></div>';return;}
   target.innerHTML=`<div class="evaluation-grid">${summaries.map(item=>`<article class="evaluation-card"><header><span>${h(item.metric)}</span><small>${h(item.protocol)}</small></header><strong>${Number(item.estimate).toLocaleString('pt-BR',{maximumFractionDigits:4})}</strong><p>${item.ci_lower==null?'Intervalo não registrado':`IC 95% · ${Number(item.ci_lower).toLocaleString('pt-BR',{maximumFractionDigits:4})} — ${Number(item.ci_upper).toLocaleString('pt-BR',{maximumFractionDigits:4})}`}</p><footer>${h(item.algorithm)} ${h(item.algorithm_version)} · n=${number.format(item.sample_count)}</footer></article>`).join('')}</div>`;
  }catch(error){target.innerHTML=`<div class="empty"><h3>Falha ao carregar avaliação</h3><p>${h(error.message)}</p></div>`;}
+}
+
+function renderEvaluationProtocols(protocols){
+ const target=$('evaluation-protocol-list');
+ if(!protocols.length){target.innerHTML='<div class="empty"><h3>Nenhum protocolo constituído.</h3><p>Crie hipótese, tarefa, unidade experimental e critério de aceitação.</p></div>';return;}
+ target.innerHTML=`<div class="protocol-list">${protocols.map(item=>`<article class="protocol-card"><header><div><span>${h(item.task)}</span><h3>${h(item.title)} <small>v${number.format(item.version)}</small></h3></div><b class="protocol-state ${item.state==='FROZEN'?'frozen':'draft'}">${item.state==='FROZEN'?'CONGELADO':'RASCUNHO'}</b></header><p>${h(item.hypothesis)}</p><dl><div><dt>Unidade experimental</dt><dd>${h(item.experimental_unit)}</dd></div><div><dt>Separação</dt><dd>${h(item.split_strategy)}</dd></div><div><dt>Critério</dt><dd>${h(item.acceptance_criteria?.statement||'—')}</dd></div></dl>${item.limitations?`<footer><strong>Limitações:</strong> ${h(item.limitations)}</footer>`:''}</article>`).join('')}</div>`;
+}
+
+function closeEvaluationProtocol(){$('evaluation-protocol-modal').classList.add('hidden');}
+async function createEvaluationProtocol(event){
+ event.preventDefault();const button=event.submitter;button.disabled=true;
+ try{await api('/api/v1/evaluation/protocols',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:$('evaluation-title-input').value.trim(),hypothesis:$('evaluation-hypothesis').value.trim(),task:$('evaluation-task').value,experimental_unit:$('evaluation-unit').value.trim(),split_strategy:$('evaluation-split').value.trim(),acceptance_criteria:$('evaluation-criteria').value.trim(),limitations:$('evaluation-limitations').value.trim(),state:$('evaluation-freeze').checked?'FROZEN':'DRAFT'})});closeEvaluationProtocol();$('evaluation-protocol-form').reset();await loadEvaluation();toast('Protocolo científico criado e versionado.');}catch(error){toast(error.message);}finally{button.disabled=false;}
 }
 
 async function api(path, options = {}){
@@ -2000,6 +2013,10 @@ restoreInspectorSize();
 for(const b of document.querySelectorAll('[data-view]')) b.addEventListener('click', () => nav(b.dataset.view));
 $('hero-upload').onclick = () => nav('recebimento');
 if($('refresh-evaluation')) $('refresh-evaluation').onclick=loadEvaluation;
+if($('new-evaluation-protocol')) $('new-evaluation-protocol').onclick=()=>$('evaluation-protocol-modal').classList.remove('hidden');
+if($('close-evaluation-protocol')) $('close-evaluation-protocol').onclick=closeEvaluationProtocol;
+if($('cancel-evaluation-protocol')) $('cancel-evaluation-protocol').onclick=closeEvaluationProtocol;
+if($('evaluation-protocol-form')) $('evaluation-protocol-form').addEventListener('submit',createEvaluationProtocol);
 $('refresh').onclick = refresh;
 $('refresh-root-analyses').onclick = loadRootMetricRecords;
 $('root-analysis-search').oninput = renderRootMetricRecords;

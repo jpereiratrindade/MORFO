@@ -639,6 +639,32 @@ SELECT s.id,s.run_id,s.metric,s.estimate,s.ci_lower,s.ci_upper,s.sample_count,s.
  out<<"]}}";return out.str();
 }
 
+static std::string evaluation_protocols_json(const App& app,const std::string& user_id){
+ Db db(app.root/"morfo.sqlite3");Stmt rows(db.p,R"SQL(
+SELECT id,title,hypothesis,task,experimental_unit,split_strategy,acceptance_criteria_json,
+       limitations,state,protocol_version,created_at
+ FROM evaluation_protocols WHERE owner_user_id=? ORDER BY created_at DESC,rowid DESC
+)SQL");rows.bind(1,user_id);std::ostringstream out;out<<"{\"schema\":\"morfo.evaluation-protocols.v1\",\"data\":[";bool first=true;
+ while(sqlite3_step(rows.p)==SQLITE_ROW){if(!first)out<<',';first=false;out<<"{\"id\":"<<q(col(rows.p,0))<<",\"title\":"<<q(col(rows.p,1))<<",\"hypothesis\":"<<q(col(rows.p,2))<<",\"task\":"<<q(col(rows.p,3))<<",\"experimental_unit\":"<<q(col(rows.p,4))<<",\"split_strategy\":"<<q(col(rows.p,5))<<",\"acceptance_criteria\":"<<col(rows.p,6)<<",\"limitations\":"<<q(col(rows.p,7))<<",\"state\":"<<q(col(rows.p,8))<<",\"version\":"<<sqlite3_column_int(rows.p,9)<<",\"created_at\":"<<q(col(rows.p,10))<<'}';}
+ out<<"]}";return out.str();
+}
+
+static std::string create_evaluation_protocol(const App& app,const std::string& user_id,const std::string& body){
+ const auto title=json_extract_string(body,"title"),hypothesis=json_extract_string(body,"hypothesis"),task=json_extract_string(body,"task"),unit=json_extract_string(body,"experimental_unit"),split=json_extract_string(body,"split_strategy"),criteria=json_extract_string(body,"acceptance_criteria"),limitations=json_extract_string(body,"limitations"),state=json_extract_string(body,"state");
+ const std::set<std::string> tasks={"CLASSIFICATION","SEGMENTATION","CLUSTERING","MEASUREMENT","ROBUSTNESS","REPRODUCIBILITY"};
+ if(title.empty()||title.size()>160)throw Failure("Protocol title must contain 1..160 characters");
+ if(hypothesis.empty()||hypothesis.size()>2000)throw Failure("Protocol hypothesis must contain 1..2000 characters");
+ if(!tasks.contains(task))throw Failure("Invalid evaluation task");
+ if(unit.empty()||unit.size()>160)throw Failure("Experimental unit is required");
+ if(split.empty()||split.size()>500)throw Failure("Split strategy is required");
+ if(criteria.empty()||criteria.size()>2000)throw Failure("Acceptance criteria are required");
+ if(limitations.size()>2000)throw Failure("Limitations exceed 2000 characters");
+ if(state!="DRAFT"&&state!="FROZEN")throw Failure("Protocol state must be DRAFT or FROZEN");
+ Db db(app.root/"morfo.sqlite3");Stmt version(db.p,"SELECT COALESCE(MAX(protocol_version),0)+1 FROM evaluation_protocols WHERE owner_user_id=? AND title=?");version.bind(1,user_id);version.bind(2,title);if(sqlite3_step(version.p)!=SQLITE_ROW)throw Failure("Cannot version protocol");const int next=sqlite3_column_int(version.p,0);
+ const std::string id=rand_id(),now=utc_offset(0),criteria_json="{\"statement\":"+q(criteria)+"}";Stmt insert(db.p,"INSERT INTO evaluation_protocols(id,owner_user_id,title,hypothesis,task,experimental_unit,split_strategy,acceptance_criteria_json,limitations,state,protocol_version,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)");insert.bind(1,id);insert.bind(2,user_id);insert.bind(3,title);insert.bind(4,hypothesis);insert.bind(5,task);insert.bind(6,unit);insert.bind(7,split);insert.bind(8,criteria_json);insert.bind(9,limitations);insert.bind(10,state);sqlite3_bind_int(insert.p,11,next);insert.bind(12,now);if(sqlite3_step(insert.p)!=SQLITE_DONE)throw Failure(sqlite3_errmsg(db.p));
+ return evaluation_protocols_json(app,user_id);
+}
+
 static std::string update_analysis_run(const App& app,const std::string& run_id,const std::string& user_id,const std::string& body){
  const std::string status=json_extract_string(body,"status");
  const std::string notes=json_extract_string(body,"notes");
@@ -1433,7 +1459,7 @@ static Response handle(const App& app,const http::request<http::string_body>& re
  if(req.method()==http::verb::get&&p=="/api/v1/refinement-parameters")return respond(http::status::ok,v,refinement_parameters_contract());
 
  // Protected routes
- if(p=="/api/v1/images"||p=="/api/v1/root-metrics"||p=="/api/v1/evaluation/overview"||p=="/api/v1/parameter-presets"||p=="/api/v1/export/manifest.csv"||p.starts_with("/api/v1/images/")||p.starts_with("/api/v1/refinements/")||p.starts_with("/api/v1/parameter-presets/")||p.starts_with("/api/v1/analysis-regions/")||p.starts_with("/api/v1/analysis-runs/")||p.starts_with("/api/v1/root-metrics/")||p.starts_with("/api/v1/calibrations/")){
+ if(p=="/api/v1/images"||p=="/api/v1/root-metrics"||p=="/api/v1/evaluation/overview"||p=="/api/v1/evaluation/protocols"||p=="/api/v1/parameter-presets"||p=="/api/v1/export/manifest.csv"||p.starts_with("/api/v1/images/")||p.starts_with("/api/v1/refinements/")||p.starts_with("/api/v1/parameter-presets/")||p.starts_with("/api/v1/analysis-regions/")||p.starts_with("/api/v1/analysis-runs/")||p.starts_with("/api/v1/root-metrics/")||p.starts_with("/api/v1/calibrations/")){
   auto user=authenticate(app,req);
   if(!user){
    return problem(v,http::status::unauthorized,"Autenticação necessária. Solicite uma chave de acesso para seu e-mail.");
@@ -1442,6 +1468,9 @@ static Response handle(const App& app,const http::request<http::string_body>& re
   if(req.method()==http::verb::get&&p=="/api/v1/export/manifest.csv")return respond(http::status::ok,v,manifest(app,user->id),"text/csv; charset=utf-8");
   if(req.method()==http::verb::get&&p=="/api/v1/root-metrics")return respond(http::status::ok,v,all_morfo_metric_runs_json(app,user->id));
   if(req.method()==http::verb::get&&p=="/api/v1/evaluation/overview")return respond(http::status::ok,v,evaluation_overview_json(app,user->id));
+  if(p=="/api/v1/evaluation/protocols"){
+   try{if(req.method()==http::verb::get)return respond(http::status::ok,v,evaluation_protocols_json(app,user->id));if(req.method()==http::verb::post){if(req[http::field::content_type].find("application/json")!=0)return problem(v,http::status::unsupported_media_type,"Use application/json");return respond(http::status::created,v,create_evaluation_protocol(app,user->id,req.body()));}}catch(const std::exception& e){return problem(v,http::status::unprocessable_entity,e.what());}
+  }
   if(p=="/api/v1/parameter-presets"){
    try{if(req.method()==http::verb::get)return respond(http::status::ok,v,parameter_presets(app,user->id));if(req.method()==http::verb::post){if(req[http::field::content_type].find("application/json")!=0)return problem(v,http::status::unsupported_media_type,"Use application/json");return respond(http::status::created,v,save_parameter_preset(app,user->id,req.body()));}}catch(const std::exception& e){return problem(v,http::status::unprocessable_entity,e.what());}
   }

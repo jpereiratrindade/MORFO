@@ -222,6 +222,22 @@ def main():
             assert evaluation['schema']=='morfo.evaluation-overview.v1'
             assert evaluation['data']['counts']=={'protocols':0,'datasets':0,'runs':0,'completed':0}
             assert evaluation['data']['summaries']==[]
+            protocol = {
+                'title':'Validação EXP-003', 'hypothesis':'EXP-003 supera baseline congelado.',
+                'task':'SEGMENTATION', 'experimental_unit':'planta',
+                'split_strategy':'Agrupada por planta e sessão',
+                'acceptance_criteria':'Dice com IC 95% e análise de perdas',
+                'limitations':'Primeiro domínio: raízes', 'state':'FROZEN'
+            }
+            status,body,_=req(base+'/api/v1/evaluation/protocols','POST',json.dumps(protocol).encode(),{'Content-Type':'application/json',**auth_headers})
+            assert status==201,(status,body)
+            protocols=json.loads(body)['data']
+            assert len(protocols)==1 and protocols[0]['version']==1 and protocols[0]['state']=='FROZEN'
+            assert protocols[0]['acceptance_criteria']['statement']==protocol['acceptance_criteria']
+            status,body,_=req(base+'/api/v1/evaluation/protocols',headers=auth_headers)
+            assert status==200 and len(json.loads(body)['data'])==1
+            status,body,_=req(base+'/api/v1/evaluation/overview',headers=auth_headers)
+            assert json.loads(body)['data']['counts']['protocols']==1
 
             # Irregular dimensions cross tile boundaries and exercise EXP-004 edge tiles.
             data=patterned_png()
