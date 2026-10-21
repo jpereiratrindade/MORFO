@@ -13,7 +13,7 @@
 namespace rizoma::database {
 namespace {
 
-constexpr int latest_version=5;
+constexpr int latest_version=6;
 constexpr std::string_view migration_name="establish-v0.2.0-schema-and-history";
 // SHA-256 of the reviewed migration specification. Changing migration 1 requires
 // a new migration, never replacement of this checksum.
@@ -26,6 +26,8 @@ constexpr std::string_view crud_migration_name="crud-soft-delete-and-lifecycle";
 constexpr std::string_view crud_migration_checksum="4a7e2b1c8f39501a9d8e7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f";
 constexpr std::string_view auth_smtp_migration_name="auth-smtp-hardened-security";
 constexpr std::string_view auth_smtp_migration_checksum="e30687ca81045af756e2dd475d88f3bcd90b276cdf8112da6f8aa3b3a46ff2d9";
+constexpr std::string_view evaluate_migration_name="morfo-dev-002-scientific-evaluation-foundation";
+constexpr std::string_view evaluate_migration_checksum="67d8e20b785ae5198a23a19d45c697cda78ff799e15c83bf259b63d29f476c85";
 
 
 std::string sqlite_error(sqlite3* db,const std::string& context){
@@ -268,6 +270,73 @@ CREATE INDEX IF NOT EXISTS idx_auth_audit_email ON auth_audit_events(email, occu
  execute(db,"CREATE INDEX IF NOT EXISTS idx_auth_codes_lookup ON auth_codes(email, expires_at, used_at);");
 }
 
+void apply_migration_6(sqlite3* db){
+ execute(db,R"SQL(
+CREATE TABLE evaluation_protocols(
+ id TEXT PRIMARY KEY, owner_user_id TEXT NOT NULL REFERENCES users(id),
+ title TEXT NOT NULL, hypothesis TEXT NOT NULL, task TEXT NOT NULL
+  CHECK(task IN('CLASSIFICATION','SEGMENTATION','CLUSTERING','MEASUREMENT','ROBUSTNESS','REPRODUCIBILITY')),
+ experimental_unit TEXT NOT NULL, split_strategy TEXT NOT NULL,
+ acceptance_criteria_json TEXT NOT NULL, limitations TEXT NOT NULL,
+ state TEXT NOT NULL CHECK(state IN('DRAFT','FROZEN')),
+ protocol_version INTEGER NOT NULL CHECK(protocol_version>0), created_at TEXT NOT NULL,
+ UNIQUE(title,protocol_version)
+);
+CREATE TABLE evaluation_datasets(
+ id TEXT PRIMARY KEY, protocol_id TEXT NOT NULL REFERENCES evaluation_protocols(id),
+ name TEXT NOT NULL, content_sha256 TEXT NOT NULL, reference_kind TEXT NOT NULL
+  CHECK(reference_kind IN('NONE','SPECIALIST','EXPERIMENTAL')),
+ frozen_at TEXT NOT NULL, created_at TEXT NOT NULL,
+ UNIQUE(protocol_id,name,content_sha256)
+);
+CREATE TABLE evaluation_units(
+ id TEXT PRIMARY KEY, dataset_id TEXT NOT NULL REFERENCES evaluation_datasets(id),
+ external_key TEXT NOT NULL, split TEXT NOT NULL CHECK(split IN('DEVELOPMENT','TEST')),
+ group_key TEXT NOT NULL, input_sha256 TEXT NOT NULL, metadata_json TEXT NOT NULL,
+ UNIQUE(dataset_id,external_key), UNIQUE(dataset_id,input_sha256)
+);
+CREATE TABLE evaluation_runs(
+ id TEXT PRIMARY KEY, protocol_id TEXT NOT NULL REFERENCES evaluation_protocols(id),
+ dataset_id TEXT NOT NULL REFERENCES evaluation_datasets(id),
+ requested_by_user_id TEXT NOT NULL REFERENCES users(id), algorithm TEXT NOT NULL,
+ algorithm_version TEXT NOT NULL, source_revision TEXT NOT NULL,
+ parameters_json TEXT NOT NULL, environment_json TEXT NOT NULL, random_seed INTEGER NOT NULL,
+ status TEXT NOT NULL CHECK(status IN('RUNNING','COMPLETED','FAILED')),
+ started_at TEXT NOT NULL, completed_at TEXT, error TEXT
+);
+CREATE TABLE evaluation_observations(
+ id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES evaluation_runs(id),
+ unit_id TEXT NOT NULL REFERENCES evaluation_units(id), metric TEXT NOT NULL,
+ value REAL NOT NULL, reference_sha256 TEXT, detail_json TEXT NOT NULL,
+ created_at TEXT NOT NULL, UNIQUE(run_id,unit_id,metric)
+);
+CREATE TABLE evaluation_summaries(
+ id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES evaluation_runs(id), metric TEXT NOT NULL,
+ estimate REAL NOT NULL, ci_lower REAL, ci_upper REAL, sample_count INTEGER NOT NULL CHECK(sample_count>0),
+ method TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(run_id,metric)
+);
+CREATE INDEX idx_evaluation_runs_protocol ON evaluation_runs(protocol_id,started_at DESC);
+CREATE INDEX idx_evaluation_units_dataset_split ON evaluation_units(dataset_id,split,group_key);
+CREATE INDEX idx_evaluation_observations_run ON evaluation_observations(run_id,metric);
+CREATE TRIGGER evaluation_protocols_no_delete BEFORE DELETE ON evaluation_protocols BEGIN SELECT RAISE(ABORT,'evaluation protocols are retained'); END;
+CREATE TRIGGER evaluation_datasets_immutable_update BEFORE UPDATE ON evaluation_datasets BEGIN SELECT RAISE(ABORT,'evaluation datasets are immutable'); END;
+CREATE TRIGGER evaluation_datasets_immutable_delete BEFORE DELETE ON evaluation_datasets BEGIN SELECT RAISE(ABORT,'evaluation datasets are immutable'); END;
+CREATE TRIGGER evaluation_units_immutable_update BEFORE UPDATE ON evaluation_units BEGIN SELECT RAISE(ABORT,'evaluation units are immutable'); END;
+CREATE TRIGGER evaluation_units_immutable_delete BEFORE DELETE ON evaluation_units BEGIN SELECT RAISE(ABORT,'evaluation units are immutable'); END;
+CREATE TRIGGER evaluation_observations_immutable_update BEFORE UPDATE ON evaluation_observations BEGIN SELECT RAISE(ABORT,'evaluation observations are immutable'); END;
+CREATE TRIGGER evaluation_observations_immutable_delete BEFORE DELETE ON evaluation_observations BEGIN SELECT RAISE(ABORT,'evaluation observations are immutable'); END;
+CREATE TRIGGER evaluation_summaries_immutable_update BEFORE UPDATE ON evaluation_summaries BEGIN SELECT RAISE(ABORT,'evaluation summaries are immutable'); END;
+CREATE TRIGGER evaluation_summaries_immutable_delete BEFORE DELETE ON evaluation_summaries BEGIN SELECT RAISE(ABORT,'evaluation summaries are immutable'); END;
+CREATE TRIGGER evaluation_no_group_leakage BEFORE INSERT ON evaluation_units
+WHEN EXISTS(SELECT 1 FROM evaluation_units WHERE dataset_id=NEW.dataset_id AND group_key=NEW.group_key AND split!=NEW.split)
+BEGIN SELECT RAISE(ABORT,'experimental group cannot cross development and test splits'); END;
+CREATE TRIGGER evaluation_accuracy_requires_reference BEFORE INSERT ON evaluation_observations
+WHEN NEW.metric IN('accuracy','precision','recall','f1','dice','iou','ari')
+ AND (NEW.reference_sha256 IS NULL OR NEW.reference_sha256='')
+BEGIN SELECT RAISE(ABORT,'reference-based metric requires independent reference'); END;
+)SQL");
+}
+
 void verify_database(sqlite3* db){
  {
   Statement st(db,"PRAGMA integrity_check");
@@ -337,7 +406,7 @@ void migrate(const std::filesystem::path& file){
    version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL
   ))SQL");
   Statement known(db,"SELECT version,name,checksum FROM schema_migrations ORDER BY version");
-  bool applied=false,analysis_applied=false,learning_applied=false,crud_applied=false,auth_smtp_applied=false;
+  bool applied=false,analysis_applied=false,learning_applied=false,crud_applied=false,auth_smtp_applied=false,evaluate_applied=false;
   while(sqlite3_step(known.get())==SQLITE_ROW){
    const int version=sqlite3_column_int(known.get(),0);
    if(version>latest_version)throw std::runtime_error("Database was migrated by a newer RIZOMA version");
@@ -366,11 +435,17 @@ void migrate(const std::filesystem::path& file){
     if(known.text(1)!=auth_smtp_migration_name||known.text(2)!=auth_smtp_migration_checksum)
      throw std::runtime_error("Migration 5 checksum or name does not match the application");
    }
+   if(version==6){
+    evaluate_applied=true;
+    if(known.text(1)!=evaluate_migration_name||known.text(2)!=evaluate_migration_checksum)
+     throw std::runtime_error("Migration 6 checksum or name does not match the application");
+   }
   }
   if(analysis_applied&&!applied)throw std::runtime_error("Migration history is not contiguous");
   if(learning_applied&&!analysis_applied)throw std::runtime_error("Migration history is not contiguous");
   if(crud_applied&&!learning_applied)throw std::runtime_error("Migration history is not contiguous");
   if(auth_smtp_applied&&!crud_applied)throw std::runtime_error("Migration history is not contiguous");
+  if(evaluate_applied&&!auth_smtp_applied)throw std::runtime_error("Migration history is not contiguous");
   if(!applied){
    apply_migration_1(db);
    Statement record(db,"INSERT INTO schema_migrations(version,name,checksum,applied_at) VALUES(1,?,?,?)");
@@ -400,6 +475,12 @@ void migrate(const std::filesystem::path& file){
    Statement record(db,"INSERT INTO schema_migrations(version,name,checksum,applied_at) VALUES(5,?,?,?)");
    record.bind(1,std::string(auth_smtp_migration_name));record.bind(2,std::string(auth_smtp_migration_checksum));record.bind(3,utc_now());
    if(sqlite3_step(record.get())!=SQLITE_DONE)throw std::runtime_error(sqlite_error(db,"Cannot record migration 5"));
+  }
+  if(!evaluate_applied){
+   apply_migration_6(db);
+   Statement record(db,"INSERT INTO schema_migrations(version,name,checksum,applied_at) VALUES(6,?,?,?)");
+   record.bind(1,std::string(evaluate_migration_name));record.bind(2,std::string(evaluate_migration_checksum));record.bind(3,utc_now());
+   if(sqlite3_step(record.get())!=SQLITE_DONE)throw std::runtime_error(sqlite_error(db,"Cannot record migration 6"));
   }
   verify_database(db);
   execute(db,"COMMIT");

@@ -8,6 +8,7 @@ Consulte os documentos constitucionais e arquiteturais em [`docs/`](docs/):
 - [`docs/MORFO-CONSTITUTION-001.md`](docs/MORFO-CONSTITUTION-001.md)
 - [`docs/MORFO-ARCHITECTURE-001.md`](docs/MORFO-ARCHITECTURE-001.md)
 - [`docs/MORFO-DEV-ROI-001-API.md`](docs/MORFO-DEV-ROI-001-API.md)
+- [`docs/MORFO-DEV-002.md`](docs/MORFO-DEV-002.md) — MORFO-AVALIA e experimentação reproduzível
 
 ---
 
@@ -139,6 +140,11 @@ O binário `morfo-server` inclui comandos administrativos diretos para gerenciar
    - Histórico encadeado de refinamentos com pré-visualização e descarte não destrutivo.
    - Gerenciamento de presets de parâmetros.
    - Exportação em lote de imagens originais, máscaras derivadas e métricas consolidadas em pacotes ZIP.
+6. **MORFO-AVALIA (fundação científica)**:
+   - Métricas independentes para segmentação, classificação, agrupamento e mensuração.
+   - Protocolos versionados, conjuntos congelados e evidência imutável no SQLite.
+   - Proteção contra vazamento da mesma unidade experimental entre desenvolvimento e teste.
+   - Intervalos de confiança por bootstrap da unidade experimental.
 
 ---
 
