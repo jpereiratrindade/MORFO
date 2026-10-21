@@ -986,7 +986,7 @@ static std::string morfo_profile_list(const App& app,const std::string& image_id
  Stmt owned(db.p,"SELECT 1 FROM images WHERE id=? AND user_id=? AND deleted_at IS NULL");
  owned.bind(1,image_id);owned.bind(2,user_id);
  if(sqlite3_step(owned.p)!=SQLITE_ROW)throw Failure("Image not found");
- Stmt st(db.p,"SELECT id,candidate_pixels,components,border_abstentions,status,created_at FROM morfo_profile_runs WHERE image_id=? AND user_id=? AND profile='roots-exp003' ORDER BY created_at DESC,rowid DESC");
+ Stmt st(db.p,"SELECT id,candidate_pixels,components,border_abstentions,status,created_at FROM morfo_profile_runs WHERE image_id=? AND user_id=? AND profile='roots-exp003' AND deleted_at IS NULL ORDER BY created_at DESC,rowid DESC");
  st.bind(1,image_id);st.bind(2,user_id);
  std::string result="{\"data\":[";bool first=true;
  while(sqlite3_step(st.p)==SQLITE_ROW){if(!first)result+=',';first=false;
@@ -996,6 +996,9 @@ static std::string morfo_profile_list(const App& app,const std::string& image_id
    ",\"status\":"+q(col(st.p,4))+",\"created_at\":"+q(col(st.p,5))+"}";
  }
  return result+"]}";
+}
+static std::string morfo_delete_profile(const App& app,const std::string& image_id,const std::string& run_id,const std::string& user_id){
+ Db db(app.root/"morfo.sqlite3");const auto now=utc_offset(0);sql(db.p,"BEGIN IMMEDIATE");try{Stmt update(db.p,"UPDATE morfo_profile_runs SET deleted_at=? WHERE id=? AND image_id=? AND user_id=? AND profile='roots-exp003' AND deleted_at IS NULL");update.bind(1,now);update.bind(2,run_id);update.bind(3,image_id);update.bind(4,user_id);if(sqlite3_step(update.p)!=SQLITE_DONE||sqlite3_changes(db.p)!=1)throw Failure("Profile run not found");Stmt metrics(db.p,"UPDATE morfo_root_metric_runs SET deleted_at=? WHERE profile_run_id=? AND user_id=? AND deleted_at IS NULL");metrics.bind(1,now);metrics.bind(2,run_id);metrics.bind(3,user_id);if(sqlite3_step(metrics.p)!=SQLITE_DONE)throw Failure(sqlite3_errmsg(db.p));Stmt event(db.p,"INSERT INTO events(image_id,event,at,detail) VALUES(?,'PROFILE_RUN_DELETED',?,?)");event.bind(1,image_id);event.bind(2,now);event.bind(3,"profile=roots-exp003 | run_id="+run_id);if(sqlite3_step(event.p)!=SQLITE_DONE)throw Failure(sqlite3_errmsg(db.p));sql(db.p,"COMMIT");}catch(...){sqlite3_exec(db.p,"ROLLBACK",nullptr,nullptr,nullptr);throw;}return "{\"data\":{\"id\":"+q(run_id)+",\"image_id\":"+q(image_id)+",\"deleted\":true,\"deleted_at\":"+q(now)+"}}";
 }
 static std::string morfo_start_profile(const App& app,const std::string& image_id,const std::string& user_id){
  Db db(app.root/"morfo.sqlite3");
@@ -1030,7 +1033,7 @@ static std::string morfo_profile_artifact(const App& app,const std::string& imag
  const auto run_id=suffix.substr(0,slash),kind=suffix.substr(slash+1);
  if(!valid_id(run_id)||(kind!="mask"&&kind!="overlay"&&kind!="report"))throw Failure("Invalid profile artifact");
  Db db(app.root/"morfo.sqlite3");
- Stmt st(db.p,"SELECT r.relative_dir FROM morfo_profile_runs r JOIN images i ON i.id=r.image_id WHERE r.id=? AND r.image_id=? AND r.user_id=? AND i.user_id=? AND i.deleted_at IS NULL");
+ Stmt st(db.p,"SELECT r.relative_dir FROM morfo_profile_runs r JOIN images i ON i.id=r.image_id WHERE r.id=? AND r.image_id=? AND r.user_id=? AND r.deleted_at IS NULL AND i.user_id=? AND i.deleted_at IS NULL");
  st.bind(1,run_id);st.bind(2,image_id);st.bind(3,user_id);st.bind(4,user_id);
  if(sqlite3_step(st.p)!=SQLITE_ROW)throw Failure("Profile run not found");
  const fs::path name=(kind=="report"?"report.json":kind=="mask"?"mask.png":"overlay.png");
@@ -1139,7 +1142,7 @@ static std::string morfo_start_metrics(const App& app,const std::string& image_i
  Db db(app.root/"morfo.sqlite3");
  fs::path mask_path;std::string mask_sha,profile_version,effective_profile_run=profile_run_id;
  if(refinement_id.empty()){
-  Stmt run(db.p,"SELECT relative_dir,mask_sha256,version FROM morfo_profile_runs WHERE id=? AND image_id=? AND user_id=? AND profile='roots-exp003'");run.bind(1,profile_run_id);run.bind(2,image_id);run.bind(3,user_id);if(sqlite3_step(run.p)!=SQLITE_ROW)throw Failure("Profile run not found");mask_path=app.root/col(run.p,0)/"mask.png";mask_sha=col(run.p,1);profile_version=col(run.p,2);
+  Stmt run(db.p,"SELECT relative_dir,mask_sha256,version FROM morfo_profile_runs WHERE id=? AND image_id=? AND user_id=? AND profile='roots-exp003' AND deleted_at IS NULL");run.bind(1,profile_run_id);run.bind(2,image_id);run.bind(3,user_id);if(sqlite3_step(run.p)!=SQLITE_ROW)throw Failure("Profile run not found");mask_path=app.root/col(run.p,0)/"mask.png";mask_sha=col(run.p,1);profile_version=col(run.p,2);
  }else{
   Stmt run(db.p,R"SQL(SELECT s.base_profile_run_id,r.mask_relative_path,r.mask_sha256,p.version FROM morfo_refinement_sessions s JOIN morfo_refinement_revisions r ON r.id=s.current_revision_id JOIN morfo_profile_runs p ON p.id=s.base_profile_run_id WHERE s.id=? AND s.image_id=? AND s.user_id=? AND s.status='CONFIRMED')SQL");run.bind(1,refinement_id);run.bind(2,image_id);run.bind(3,user_id);if(sqlite3_step(run.p)!=SQLITE_ROW)throw Failure("Confirmed refinement not found");effective_profile_run=col(run.p,0);mask_path=app.root/col(run.p,1);mask_sha=col(run.p,2);profile_version=col(run.p,3)+"+refinement-0.2.0";
  }
@@ -1581,6 +1584,7 @@ static Response handle(const App& app,const http::request<http::string_body>& re
      const auto inner=kind.substr(std::string("profiles/roots-exp003/").size());const auto profile_run_id=inner.substr(0,inner.size()-std::string("/metrics/runs").size());if(!valid_id(profile_run_id))return problem(v,http::status::bad_request,"Invalid profile run identifier");
      if(req.method()==http::verb::get)return respond(http::status::ok,v,morfo_metric_runs_json(app,id,profile_run_id,user->id));
     }
+    if(kind.starts_with("profiles/roots-exp003/")&&req.method()==http::verb::delete_){const auto profile_run_id=kind.substr(std::string("profiles/roots-exp003/").size());if(!valid_id(profile_run_id))return problem(v,http::status::bad_request,"Invalid profile run identifier");try{return respond(http::status::ok,v,morfo_delete_profile(app,id,profile_run_id,user->id));}catch(const std::exception& e){return problem(v,std::string(e.what())=="Profile run not found"?http::status::not_found:http::status::unprocessable_entity,e.what());}}
     if(kind.starts_with("profiles/roots-exp003/")&&(kind.ends_with("/metrics/export.csv")||kind.ends_with("/metrics/export.json"))){
      const bool csv=kind.ends_with("/export.csv");const std::string ending=csv?"/metrics/export.csv":"/metrics/export.json";
      const auto inner=kind.substr(std::string("profiles/roots-exp003/").size());const auto profile_run_id=inner.substr(0,inner.size()-ending.size());

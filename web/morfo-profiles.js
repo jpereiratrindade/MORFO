@@ -55,6 +55,7 @@
   function clearVisual() {
     if(layer){layer.removeAttribute('src');layer.classList.add('hidden');layer.style.opacity='1';}
     state.run=null;state.report=null;state.metrics=null;state.metricRuns=[];state.layer='original';
+    if($('morfo-delete-run'))$('morfo-delete-run').disabled=true;
     refreshLayers();
   }
 
@@ -220,6 +221,7 @@
       const good=await readMask(id,report,imageId,epoch);
       if(!good)return;
       state.run=run;state.report=report;
+      $('morfo-delete-run').disabled=false;
       let metricResponse=await json(metricsPath(imageId,id));
       if(epoch!==state.generation||imageId!==state.imageId)return;
       if(!metricResponse.data){
@@ -286,6 +288,16 @@
     finally{state.busy=false;if(button)button.disabled=!state.imageId || !state.profileAvailable;}
   }
 
+  async function deleteProfileRun(){
+    const imageId=state.imageId,runId=state.run?.id;
+    if(!imageId||!runId)return;
+    if(!confirm('Remover esta execução EXP-003? A imagem original será preservada. Máscaras, métricas e refinamentos permanecerão somente na trilha auditável.'))return;
+    const button=$('morfo-delete-run');button.disabled=true;
+    try{await json(`${rootPath(imageId)}/${encodeURIComponent(runId)}`,{method:'DELETE'});clearVisual();await loadHistory(imageId,true);message('Execução removida do histórico ativo. Imagem original preservada.');}
+    catch(error){message(`Falha ao remover execução: ${error.message}`,'error');}
+    finally{button.disabled=!state.run;}
+  }
+
   function build() {
     const inspector=$('inspector');
     const tools=inspector?.querySelector('.modal-tools');
@@ -304,6 +316,7 @@
         </select></label>
         <button id="morfo-run" type="button" class="morfo-run">Executar perfil</button>
         <button id="morfo-refine" type="button" class="morfo-refine" disabled>◫ Refinar regiões</button>
+        <button id="morfo-delete-run" type="button" class="morfo-delete-run" disabled>🗑 Remover execução</button>
         <label for="morfo-history">Histórico de execuções<select id="morfo-history" disabled>
           <option value="">Nenhuma execução</option></select></label>
       </div>
@@ -322,6 +335,7 @@
     canvas.append(layer);
     $('morfo-run').addEventListener('click',startProfile);
     $('morfo-refine').addEventListener('click',()=>$('start-refinement')?.click());
+    $('morfo-delete-run').addEventListener('click',deleteProfileRun);
     $('morfo-history').addEventListener('change',e=>selectRun(e.target.value));
     workspace.querySelectorAll('[data-morfo-layer]').forEach(b=>b.addEventListener('click',()=>showLayer(b.dataset.morfoLayer)));
     $('morfo-opacity').addEventListener('input',e=>{state.opacity=Number(e.target.value)/100;refreshLayers();});
@@ -351,6 +365,7 @@
     picker.replaceChildren(node('option',{value:'',text:'Consultando histórico...'}));picker.disabled=true;
     $('morfo-run').disabled=!imageId || !state.profileAvailable;
     $('morfo-refine').disabled=!imageId || !state.profileAvailable;
+    $('morfo-delete-run').disabled=true;
     clearVisual();renderPanel();
     if(imageId)loadHistory(imageId);
   }
@@ -359,6 +374,7 @@
     state.generation++;
     state.imageId=null;state.imageMeta=null;state.runs=[];state.calibrations=[];state.busy=false;state.refinementId=null;
     if($('morfo-refine'))$('morfo-refine').disabled=true;
+    if($('morfo-delete-run'))$('morfo-delete-run').disabled=true;
     clearVisual();renderPanel();
   }
 

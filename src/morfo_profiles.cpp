@@ -21,7 +21,8 @@ void create_schema(sqlite3* db) {
   border_abstentions INTEGER NOT NULL,
   relative_dir TEXT NOT NULL,
   status TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  deleted_at TEXT
  );
  CREATE INDEX IF NOT EXISTS idx_morfo_profile_runs_image ON morfo_profile_runs(image_id,created_at);
  CREATE TABLE IF NOT EXISTS morfo_root_metric_runs (
@@ -126,6 +127,10 @@ void create_schema(sqlite3* db) {
  if(!has_column("morfo_root_metric_runs","refinement_id")){
   if(sqlite3_exec(db,"ALTER TABLE morfo_root_metric_runs ADD COLUMN refinement_id TEXT REFERENCES morfo_refinement_sessions(id)",nullptr,nullptr,&error)!=SQLITE_OK){std::string message=error?error:"schema alter error";sqlite3_free(error);throw std::runtime_error("MORFO profile schema: "+message);}
  }
+ if(!has_column("morfo_profile_runs","deleted_at")){
+  if(sqlite3_exec(db,"ALTER TABLE morfo_profile_runs ADD COLUMN deleted_at TEXT",nullptr,nullptr,&error)!=SQLITE_OK){std::string message=error?error:"schema alter error";sqlite3_free(error);throw std::runtime_error("MORFO profile schema: "+message);}
+ }
+ sqlite3_exec(db,"CREATE INDEX IF NOT EXISTS idx_morfo_profile_runs_active ON morfo_profile_runs(image_id,user_id,deleted_at,created_at DESC)",nullptr,nullptr,nullptr);
  sqlite3_exec(db,"CREATE INDEX IF NOT EXISTS idx_morfo_root_metric_runs_refinement ON morfo_root_metric_runs(refinement_id,created_at DESC)",nullptr,nullptr,nullptr);
  for(const auto& [column,definition]:std::initializer_list<std::pair<const char*,const char*>>{{"status","TEXT NOT NULL DEFAULT 'NOT_VALIDATED'"},{"notes","TEXT NOT NULL DEFAULT ''"},{"deleted_at","TEXT"}})
   if(!has_column("morfo_root_metric_runs",column)){

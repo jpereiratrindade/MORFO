@@ -549,6 +549,18 @@ def main():
             refined_mask_sha=db.execute('SELECT r.mask_sha256 FROM morfo_refinement_sessions s JOIN morfo_refinement_revisions r ON r.id=s.current_revision_id WHERE s.id=?',(branch_id,)).fetchone()[0]
             db.close(); assert metric_row == (branch_id,refined_mask_sha),metric_row
 
+            # Profile execution removal is soft, owned and immediately leaves active history.
+            status, body, _ = req(profile_url+'/'+profile_id,'DELETE',b'',auth_headers)
+            assert status == 200 and json.loads(body)['data']['deleted'] is True,(status,body)
+            status, body, _ = req(profile_url,headers=auth_headers)
+            assert status == 200 and profile_id not in body.decode(),(status,body)
+            status, body, _ = req(profile_url+'/'+profile_id+'/report',headers=auth_headers)
+            assert status == 404,(status,body)
+            db=sqlite3.connect(Path(temp)/'morfo.sqlite3')
+            assert db.execute('SELECT deleted_at IS NOT NULL FROM morfo_profile_runs WHERE id=?',(profile_id,)).fetchone()==(1,)
+            assert db.execute('SELECT COUNT(*) FROM events WHERE image_id=? AND event=?',(analysis_image_id,'PROFILE_RUN_DELETED')).fetchone()==(1,)
+            db.close()
+
             # 7. Multi-user isolation verification (User 2)
             email2 = 'pesquisador2@embrapa.br'
             status,body,_=req(base+'/api/v1/auth/request-code','POST',json.dumps({'email':email2}).encode(),{'Content-Type':'application/json'})
