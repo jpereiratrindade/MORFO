@@ -228,13 +228,14 @@
 .morfo-head p{margin:0;color:#64788a;font-size:.76rem}
 .morfo-eyebrow{color:#087f8c!important;font-size:.61rem!important;font-weight:800!important;letter-spacing:.12em;margin:0 0 3px!important}
 .morfo-state{font-size:.6rem;background:#e9f4f3;color:#087f8c;padding:6px 9px;border:1px solid #cfebea;border-radius:14px;font-weight:800}
-.morfo-command-bar{display:grid;grid-template-columns:minmax(170px,1.05fr) auto auto auto minmax(170px,1fr);gap:10px;align-items:end;margin:12px 0}
+.morfo-command-bar{display:grid;grid-template-columns:minmax(170px,1.05fr) repeat(4,auto) minmax(170px,1fr);gap:10px;align-items:end;margin:12px 0}
 .morfo-command-bar label{display:grid;gap:5px;color:#435970;font-size:.67rem;font-weight:750}
 .morfo-command-bar select{display:block;width:100%;max-width:100%;border:1px solid #c8d8e3;background:white;border-radius:8px;padding:9px;color:#18334b;font:inherit;font-size:.72rem;height:39px}
 .morfo-command-bar .morfo-run{border:0;border-radius:8px;background:#087f8c;color:#fff;padding:9px 16px;height:39px;font-size:.75rem;font-weight:800;cursor:pointer}
 .morfo-command-bar .morfo-run:hover{background:#066a76}
 .morfo-command-bar .morfo-refine{border:1px solid #087f8c;border-radius:8px;background:#fff;color:#087f8c;padding:9px 16px;height:39px;font-size:.75rem;font-weight:800;cursor:pointer}.morfo-command-bar .morfo-refine:hover{background:#e7f5f3}
 .morfo-command-bar .morfo-delete-run{border:1px solid #d99b91;border-radius:8px;background:#fff7f5;color:#9a342d;padding:9px 13px;height:39px;font-size:.72rem;font-weight:800;cursor:pointer}.morfo-command-bar .morfo-delete-run:hover{background:#ffebe6}
+.morfo-command-bar .morfo-evaluate-run{border:1px solid #6aaeb5;border-radius:8px;background:#edf8f7;color:#087f8c;padding:9px 13px;height:39px;font-size:.72rem;font-weight:800;cursor:pointer}.morfo-command-bar .morfo-evaluate-run:hover{background:#dff2f0}
 .morfo-command-bar button:disabled{opacity:.55;cursor:default}
 .morfo-layer-controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .morfo-layer-label{color:#64788a;font-weight:700;font-size:.68rem;margin-right:3px}

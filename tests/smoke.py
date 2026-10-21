@@ -235,10 +235,6 @@ def main():
             assert len(protocols)==1 and protocols[0]['version']==1 and protocols[0]['state']=='DRAFT'
             assert protocols[0]['acceptance_criteria']['statement']==protocol['acceptance_criteria']
             protocol_id=protocols[0]['id']
-            status,body,_=req(base+f'/api/v1/evaluation/protocols/{protocol_id}/freeze','POST',b'',auth_headers)
-            assert status==200 and json.loads(body)['data'][0]['state']=='FROZEN',(status,body)
-            status,body,_=req(base+f'/api/v1/evaluation/protocols/{protocol_id}/freeze','POST',b'',auth_headers)
-            assert status==422,(status,body)
             status,body,_=req(base+'/api/v1/evaluation/protocols',headers=auth_headers)
             assert status==200 and len(json.loads(body)['data'])==1
             status,body,_=req(base+'/api/v1/evaluation/overview',headers=auth_headers)
@@ -452,6 +448,13 @@ def main():
             assert status == 200 and json.loads(data)['classification'] == 'ANOMALY_CANDIDATE'
             status, data, _ = req(profile_url, headers=auth_headers)
             assert status == 200 and profile_id in data.decode(), (status, data)
+            unit_body={'profile_run_id':profile_id,'split':'DEVELOPMENT','group_key':'plant-001'}
+            status, body, _ = req(base+f'/api/v1/evaluation/protocols/{protocol_id}/units','POST',json.dumps(unit_body).encode(),{'Content-Type':'application/json',**auth_headers})
+            linked=json.loads(body)['data']; assert status==201 and linked['profile_run_id']==profile_id and linked['unit_count']==1,(status,body)
+            status,body,_=req(base+f'/api/v1/evaluation/protocols/{protocol_id}/freeze','POST',b'',auth_headers)
+            assert status==200 and json.loads(body)['data'][0]['state']=='FROZEN',(status,body)
+            status,body,_=req(base+f'/api/v1/evaluation/protocols/{protocol_id}/units','POST',json.dumps(unit_body).encode(),{'Content-Type':'application/json',**auth_headers})
+            assert status==422,(status,body)
             status, data, _ = req(base+f'/api/v1/images/{large_id}/profiles/roots-exp003', 'POST', b'', auth_headers)
             assert status == 422 and b'12 MP' in data, (status, data)
 

@@ -56,6 +56,7 @@
     if(layer){layer.removeAttribute('src');layer.classList.add('hidden');layer.style.opacity='1';}
     state.run=null;state.report=null;state.metrics=null;state.metricRuns=[];state.layer='original';
     if($('morfo-delete-run'))$('morfo-delete-run').disabled=true;
+    if($('morfo-evaluate-run'))$('morfo-evaluate-run').disabled=true;
     refreshLayers();
   }
 
@@ -222,6 +223,7 @@
       if(!good)return;
       state.run=run;state.report=report;
       $('morfo-delete-run').disabled=false;
+      $('morfo-evaluate-run').disabled=false;
       let metricResponse=await json(metricsPath(imageId,id));
       if(epoch!==state.generation||imageId!==state.imageId)return;
       if(!metricResponse.data){
@@ -298,6 +300,12 @@
     finally{button.disabled=!state.run;}
   }
 
+  async function addRunToEvaluation(){
+    if(!state.run)return;const button=$('morfo-evaluate-run');button.disabled=true;
+    try{const response=await json('/api/v1/evaluation/protocols'),protocols=(response.data||[]).filter(item=>item.state==='DRAFT');if(!protocols.length)throw Error('Crie um protocolo em rascunho em Avaliação científica antes de adicionar execuções.');const menu=protocols.map((item,index)=>`${index+1} — ${item.title} v${item.version}`).join('\n');const choice=prompt(`Escolha protocolo:\n${menu}`,'1');if(choice===null)return;const protocol=protocols[Number(choice)-1];if(!protocol)throw Error('Protocolo inválido');const group=prompt('Grupo/unidade experimental desta imagem (ex.: planta-01):',state.imageMeta?.sample_id||'');if(!group?.trim())return;const split=confirm('Esta unidade pertence ao conjunto de TESTE?\nOK = TESTE · Cancelar = DESENVOLVIMENTO')?'TEST':'DEVELOPMENT';const result=await json(`/api/v1/evaluation/protocols/${encodeURIComponent(protocol.id)}/units`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({profile_run_id:state.run.id,group_key:group.trim(),split})});message(`Execução adicionada a “${protocol.title}” · ${split==='TEST'?'teste':'desenvolvimento'} · ${result.data.unit_count} unidade(s).`);}
+    catch(error){message(`Falha ao adicionar ao experimento: ${error.message}`,'error');}finally{button.disabled=!state.run;}
+  }
+
   function build() {
     const inspector=$('inspector');
     const tools=inspector?.querySelector('.modal-tools');
@@ -317,6 +325,7 @@
         <button id="morfo-run" type="button" class="morfo-run">Executar perfil</button>
         <button id="morfo-refine" type="button" class="morfo-refine" disabled>◫ Refinar regiões</button>
         <button id="morfo-delete-run" type="button" class="morfo-delete-run" disabled>🗑 Remover execução</button>
+        <button id="morfo-evaluate-run" type="button" class="morfo-evaluate-run" disabled>∿ Adicionar ao experimento</button>
         <label for="morfo-history">Histórico de execuções<select id="morfo-history" disabled>
           <option value="">Nenhuma execução</option></select></label>
       </div>
@@ -336,6 +345,7 @@
     $('morfo-run').addEventListener('click',startProfile);
     $('morfo-refine').addEventListener('click',()=>$('start-refinement')?.click());
     $('morfo-delete-run').addEventListener('click',deleteProfileRun);
+    $('morfo-evaluate-run').addEventListener('click',addRunToEvaluation);
     $('morfo-history').addEventListener('change',e=>selectRun(e.target.value));
     workspace.querySelectorAll('[data-morfo-layer]').forEach(b=>b.addEventListener('click',()=>showLayer(b.dataset.morfoLayer)));
     $('morfo-opacity').addEventListener('input',e=>{state.opacity=Number(e.target.value)/100;refreshLayers();});
@@ -366,6 +376,7 @@
     $('morfo-run').disabled=!imageId || !state.profileAvailable;
     $('morfo-refine').disabled=!imageId || !state.profileAvailable;
     $('morfo-delete-run').disabled=true;
+    $('morfo-evaluate-run').disabled=true;
     clearVisual();renderPanel();
     if(imageId)loadHistory(imageId);
   }
@@ -375,6 +386,7 @@
     state.imageId=null;state.imageMeta=null;state.runs=[];state.calibrations=[];state.busy=false;state.refinementId=null;
     if($('morfo-refine'))$('morfo-refine').disabled=true;
     if($('morfo-delete-run'))$('morfo-delete-run').disabled=true;
+    if($('morfo-evaluate-run'))$('morfo-evaluate-run').disabled=true;
     clearVisual();renderPanel();
   }
 

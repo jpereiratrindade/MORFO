@@ -8,14 +8,14 @@ with tempfile.TemporaryDirectory(prefix="morfo-evaluate-") as name:
     db = sqlite3.connect(root / "morfo.sqlite3")
     db.execute("INSERT INTO users(id,email,name,created_at,last_login_at) VALUES('u','u@example.org','U','t','t')")
     db.execute("INSERT INTO evaluation_protocols VALUES('p','u','EXP-003 baseline','h','SEGMENTATION','plant','grouped','{}','none','FROZEN',1,'t')")
-    db.execute("INSERT INTO evaluation_datasets VALUES('d','p','test','sha','SPECIALIST','t','t')")
-    db.execute("INSERT INTO evaluation_units VALUES('a','d','a','DEVELOPMENT','plant-1','sha-a','{}')")
+    db.execute("INSERT INTO evaluation_datasets(id,protocol_id,name,content_sha256,reference_kind,frozen_at,created_at) VALUES('d','p','test','sha','SPECIALIST','t','t')")
+    db.execute("INSERT INTO evaluation_units(id,dataset_id,external_key,split,group_key,input_sha256,metadata_json) VALUES('a','d','a','DEVELOPMENT','plant-1','sha-a','{}')")
     try:
-        db.execute("INSERT INTO evaluation_units VALUES('b','d','b','TEST','plant-1','sha-b','{}')")
+        db.execute("INSERT INTO evaluation_units(id,dataset_id,external_key,split,group_key,input_sha256,metadata_json) VALUES('b','d','b','TEST','plant-1','sha-b','{}')")
         raise AssertionError("group leakage accepted")
     except sqlite3.IntegrityError as error:
         assert "cannot cross" in str(error)
-    db.execute("INSERT INTO evaluation_units VALUES('b','d','b','TEST','plant-2','sha-b','{}')")
+    db.execute("INSERT INTO evaluation_units(id,dataset_id,external_key,split,group_key,input_sha256,metadata_json) VALUES('b','d','b','TEST','plant-2','sha-b','{}')")
     db.execute("INSERT INTO evaluation_runs VALUES('r','p','d','u','EXP-003','003','rev','{}','{}',42,'RUNNING','t',NULL,NULL)")
     try:
         db.execute("INSERT INTO evaluation_observations VALUES('o','r','b','dice',0.9,NULL,'{}','t')")
