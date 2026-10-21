@@ -451,6 +451,16 @@ def main():
             unit_body={'profile_run_id':profile_id,'split':'DEVELOPMENT','group_key':'plant-001'}
             status, body, _ = req(base+f'/api/v1/evaluation/protocols/{protocol_id}/units','POST',json.dumps(unit_body).encode(),{'Content-Type':'application/json',**auth_headers})
             linked=json.loads(body)['data']; assert status==201 and linked['profile_run_id']==profile_id and linked['unit_count']==1,(status,body)
+            status,body,_=req(base+'/api/v1/evaluation/datasets',headers=auth_headers)
+            datasets=json.loads(body)['data']; assert status==200 and len(datasets)==1,(status,body)
+            dataset=datasets[0]; dataset_id=dataset['id']
+            assert dataset['state']=='DRAFT' and len(dataset['content_sha256'])==64 and len(dataset['units'])==1,dataset
+            assert dataset['units'][0]['profile_run_id']==profile_id and dataset['units'][0]['group_key']=='plant-001',dataset
+            status,body,_=req(base+f'/api/v1/evaluation/protocols/{protocol_id}/freeze','POST',b'',auth_headers)
+            assert status==422 and b'Freeze evaluation datasets' in body,(status,body)
+            status,body,_=req(base+f'/api/v1/evaluation/datasets/{dataset_id}/freeze','POST',b'',auth_headers)
+            frozen_dataset=json.loads(body)['data'][0]
+            assert status==200 and frozen_dataset['state']=='FROZEN' and frozen_dataset['frozen_at'],(status,body)
             status,body,_=req(base+f'/api/v1/evaluation/protocols/{protocol_id}/freeze','POST',b'',auth_headers)
             assert status==200 and json.loads(body)['data'][0]['state']=='FROZEN',(status,body)
             status,body,_=req(base+f'/api/v1/evaluation/protocols/{protocol_id}/units','POST',json.dumps(unit_body).encode(),{'Content-Type':'application/json',**auth_headers})

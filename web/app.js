@@ -80,15 +80,28 @@ function nav(view){
 }
 
 async function loadEvaluation(){
- const target=$('evaluation-results'),protocolTarget=$('evaluation-protocol-list');if(!target)return;
- target.innerHTML='<div class="empty"><h3>Carregando evidências…</h3></div>';protocolTarget.innerHTML='<div class="empty"><h3>Carregando protocolos…</h3></div>';
+ const target=$('evaluation-results'),protocolTarget=$('evaluation-protocol-list'),datasetTarget=$('evaluation-dataset-list');if(!target)return;
+ target.innerHTML='<div class="empty"><h3>Carregando evidências…</h3></div>';protocolTarget.innerHTML='<div class="empty"><h3>Carregando protocolos…</h3></div>';datasetTarget.innerHTML='<div class="empty"><h3>Carregando conjuntos…</h3></div>';
  try{
-  const [payload,protocolPayload]=await Promise.all([api('/api/v1/evaluation/overview'),api('/api/v1/evaluation/protocols')]),data=payload.data||{},counts=data.counts||{},summaries=data.summaries||[],protocols=protocolPayload.data||[];
+  const [payload,protocolPayload,datasetPayload]=await Promise.all([api('/api/v1/evaluation/overview'),api('/api/v1/evaluation/protocols'),api('/api/v1/evaluation/datasets')]),data=payload.data||{},counts=data.counts||{},summaries=data.summaries||[],protocols=protocolPayload.data||[];
   $('eval-protocols').textContent=number.format(counts.protocols||0);$('eval-datasets').textContent=number.format(counts.datasets||0);$('eval-runs').textContent=number.format(counts.runs||0);$('eval-completed').textContent=number.format(counts.completed||0);
   renderEvaluationProtocols(protocols);
+  renderEvaluationDatasets(datasetPayload.data||[]);
   if(!summaries.length){target.innerHTML='<div class="empty evaluation-empty"><h3>Nenhuma conclusão fabricada.</h3><p>Fundação pronta. Primeiro protocolo e conjunto de referência ainda precisam ser constituídos; até lá, painel permanece honestamente vazio.</p></div>';return;}
   target.innerHTML=`<div class="evaluation-grid">${summaries.map(item=>`<article class="evaluation-card"><header><span>${h(item.metric)}</span><small>${h(item.protocol)}</small></header><strong>${Number(item.estimate).toLocaleString('pt-BR',{maximumFractionDigits:4})}</strong><p>${item.ci_lower==null?'Intervalo não registrado':`IC 95% · ${Number(item.ci_lower).toLocaleString('pt-BR',{maximumFractionDigits:4})} — ${Number(item.ci_upper).toLocaleString('pt-BR',{maximumFractionDigits:4})}`}</p><footer>${h(item.algorithm)} ${h(item.algorithm_version)} · n=${number.format(item.sample_count)}</footer></article>`).join('')}</div>`;
  }catch(error){target.innerHTML=`<div class="empty"><h3>Falha ao carregar avaliação</h3><p>${h(error.message)}</p></div>`;}
+}
+
+function renderEvaluationDatasets(datasets){
+ const target=$('evaluation-dataset-list');
+ if(!datasets.length){target.innerHTML='<div class="empty"><h3>Nenhuma imagem vinculada.</h3><p>Abra imagem no Acervo, execute perfil EXP-003 e use “Adicionar ao experimento”.</p></div>';return;}
+ target.innerHTML=`<div class="dataset-list">${datasets.map(item=>`<article class="dataset-card"><header><div><span>${h(item.protocol)}</span><h3>${h(item.name)}</h3></div><b class="protocol-state ${item.state==='FROZEN'?'frozen':'draft'}">${item.state==='FROZEN'?'CONGELADO':'RASCUNHO'}</b></header><div class="dataset-manifest"><span>Manifesto SHA-256</span><code>${h(item.content_sha256)}</code></div><div class="dataset-units"><div class="dataset-unit dataset-unit-head"><span>Imagem / amostra</span><span>Grupo experimental</span><span>Separação</span></div>${item.units.map(unit=>`<div class="dataset-unit"><span><strong>${h(unit.filename||unit.external_key)}</strong><small>${h(unit.sample_id||unit.image_id)}</small></span><span>${h(unit.group_key)}</span><span><b>${unit.split==='TEST'?'TESTE':'DESENVOLVIMENTO'}</b><small>EXP-003 ${h((unit.profile_run_id||'').slice(0,8))}</small></span></div>`).join('')}</div><footer><span>${number.format(item.units.length)} unidade(s)${item.frozen_at?` · congelado em ${h(item.frozen_at)}`:''}</span>${item.state==='DRAFT'?`<button class="button primary" type="button" data-dataset-freeze="${h(item.id)}">Congelar conjunto</button>`:'<strong>Manifesto imutável</strong>'}</footer></article>`).join('')}</div>`;
+ target.querySelectorAll('[data-dataset-freeze]').forEach(button=>button.onclick=()=>freezeEvaluationDataset(button.dataset.datasetFreeze,button));
+}
+
+async function freezeEvaluationDataset(id,button){
+ if(!confirm('Congelar este conjunto? Imagens, grupos e separação não poderão mudar.'))return;button.disabled=true;
+ try{await api(`/api/v1/evaluation/datasets/${id}/freeze`,{method:'POST'});await loadEvaluation();toast('Conjunto congelado. Manifesto preservado.');}catch(error){toast(error.message);}finally{button.disabled=false;}
 }
 
 function renderEvaluationProtocols(protocols){
