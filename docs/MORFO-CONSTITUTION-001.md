@@ -27,10 +27,10 @@ Os estados distinguem `OBSERVED`, `DERIVED`, `INFERRED`, `REVIEWED`, `VALIDATED`
 ## REA e RIT
 REA — Reflexividade Epistêmica e Adaptativa: `OBSERVE → INTERPRET → COMPARE → REVISE_OR_PRESERVE`. Manifestação futura: propor abertura, divisão, fusão, revisão ou suspensão de categorias após evidência.
 
-RIT — Reflexividade sob Integridade Temporal: todo ajuste mantém identidade do modelo, versão, dados, evento motivador, diferença de desempenho e possibilidade de auditoria/reversão. **Nesta etapa REA/RIT são contratos conceituais; nenhum perceptor adaptativo genérico é afirmado como implementado.**
+RIT — Reflexividade sob Integridade Temporal: todo ajuste mantém identidade do modelo, versão, dados, evento motivador, diferença de desempenho e possibilidade de auditoria/reversão. **REA/RIT continuam contratos conceituais. PRE-001 executa percepção genérica estática; ainda não adapta nem revisa categorias.**
 
 ## Organização dos perfis
-O registro distingue perfis `ACTIVE_EXPERIMENTAL`, `VALIDATED` e `PLANNED`. Somente `roots-exp003` executa análise temática nessa versão; `discovery` é planejado. Perfis adicionais deverão criar implementações e testes, e não só opções de interface.
+O registro distingue perfis `EXPERIMENTAL`, `VALIDATED` e `PLANNED`. `roots-exp003` executa análise temática; `discovery` executa PRE-001 genérico experimental. Nenhum deles é biologicamente validado. Perfis adicionais deverão criar implementações e testes, e não só opções de interface.
 
 ## Origem e autoria
 Infraestrutura/UI herdadas de RIZOMA, mantendo avisos originais de licença GPLv3. Núcleo EXP-003 original preservado sem modificação em `profiles/roots/exp003/{src,include}`. O MORFO é projeto derivado/independente, não uma migração destrutiva.

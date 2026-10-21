@@ -276,8 +276,15 @@
     if(!imageId || state.busy || !state.profileAvailable)return;
     state.busy=true;
     const button=$('morfo-run');button.disabled=true;
-    message('Executando EXP-003 sobre o original preservado...');
+    const selected=$('morfo-theme').value;
+    message(selected==='discovery'?'Executando PRE-001 sem classes antecipadas...':'Executando EXP-003 sobre o original preservado...');
     try{
+      if(selected==='discovery'){
+        const out=await json(`/api/v1/images/${encodeURIComponent(imageId)}/profiles/discovery`,{method:'POST'}),data=out.data;
+        if(imageId!==state.imageId)return;
+        panel.innerHTML=`<div class="morfo-empty"><h3>${data.morphotypes.length} morfotipos provisórios</h3><p>PRE-001 agrupou ${data.cells.length} células sem nomes biológicos.</p>${data.morphotypes.map(item=>`<p><strong>${item.id}</strong> · ${item.cell_count} célula(s)</p>`).join('')}<p><small>Hipótese perceptiva experimental · ${data.version}</small></p></div>`;
+        message(`PRE-001 concluído · ${data.morphotypes.length} morfotipos · ${data.cells.length} células. Persistência e mapa visual: próximo incremento.`);return;
+      }
       const out=await json(rootPath(imageId),{method:'POST'});
       if(imageId!==state.imageId)return;
       const id=out.data?.id;
@@ -320,7 +327,7 @@
       <div class="morfo-command-bar">
         <label for="morfo-theme">Perfil<select id="morfo-theme">
           <option value="roots-exp003">Raízes · Matriz adaptativa EXP-003</option>
-          <option value="discovery" disabled>Descoberta geral REA/RIT · planejada</option>
+          <option value="discovery">Perceptor genérico PRE-001 · experimental</option>
         </select></label>
         <button id="morfo-run" type="button" class="morfo-run">Executar perfil</button>
         <button id="morfo-refine" type="button" class="morfo-refine" disabled>◫ Refinar regiões</button>

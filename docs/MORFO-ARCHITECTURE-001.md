@@ -23,9 +23,10 @@ Servidor MORFO C++26 (origem: RIZOMA)
                 • estado NOT_VALIDATED
                          │
                          ▼
-                Futuro módulo `discovery` — PRE/REA/RIT
-                • não supervisionado/autossupervisionado
-                • criação de categorias com evidência, revisões versionadas
+                Perfil experimental `discovery` — PRE-001
+                • descritores genéricos e agrupamento determinístico
+                • morfotipos sem semântica biológica + novidade
+                • persistência e revisões REA/RIT ainda pendentes
 ```
 
 ## Implantação e isolamento
@@ -48,7 +49,7 @@ Servidor MORFO C++26 (origem: RIZOMA)
 - G2: **golden test**: imagem 850×757 => exatamente 3.339 pixels e 30 componentes; máscara pixel a pixel igual ao EXP-003.
 - G3: POST tema raízes retorna máscara/overlay/relatório e bloqueia leitura cruzada entre usuários.
 - G4: teste científico independente com anotações humanas; avaliar sensibilidade/precisão, Dice/IoU, raízes finas, artefatos, solo e borda.
-- G5: criar protótipo genérico de descoberta (PRE) e comparar com EXP-003; REA/RIT com contrato de estados e migrações.
+- G5: **parcial** — PRE-001 executável; faltam comparação mult domínio e REA/RIT com estados persistentes.
 
 ## Delimitação legal e científica
 RIZOMA é GPLv3; os avisos são preservados. A fixture real incluída no pacote é privada, fica em `tests/fixtures/private/` e é ignorada pelo Git; confirmar consentimento antes de distribuir/compartilhar. A saída reproduzível é evidência computacional, não identificação biológica validada.

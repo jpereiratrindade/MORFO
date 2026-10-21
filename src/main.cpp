@@ -29,6 +29,7 @@
 #include "learning.hpp"
 #include "morfo_profiles.hpp"
 #include "morfo_root_metrics.hpp"
+#include "morfo_pre.hpp"
 #include "regional_refinement.hpp"
 #include "auth_smtp.hpp"
 #include <algorithm>
@@ -1076,6 +1077,9 @@ static std::string morfo_start_profile(const App& app,const std::string& image_i
   return "{\"data\":{\"id\":"+q(run_id)+",\"profile\":\"roots-exp003\",\"status\":\"COMPLETED\",\"scientific_status\":\"NOT_VALIDATED\",\"biological_identity\":\"UNKNOWN\",\"candidate_pixels\":"+std::to_string(result.candidate_pixels)+",\"components\":"+std::to_string(result.components)+",\"border_abstentions\":"+std::to_string(result.border_abstentions)+",\"mask_sha256\":"+q(result.mask_sha256)+"}}";
  }catch(...){std::error_code ignored;fs::remove_all(output,ignored);throw;}
 }
+static std::string morfo_discover(const App& app,const std::string& image_id,const std::string& user_id){
+ Db db(app.root/"morfo.sqlite3");Stmt image(db.p,"SELECT original_path,format,width,height,sha256 FROM images WHERE id=? AND user_id=? AND deleted_at IS NULL");image.bind(1,image_id);image.bind(2,user_id);if(sqlite3_step(image.p)!=SQLITE_ROW)throw Failure("Image not found");const auto width=sqlite3_column_int64(image.p,2),height=sqlite3_column_int64(image.p,3);if(width<=0||height<=0||static_cast<std::uint64_t>(width)>12'000'000ULL/static_cast<std::uint64_t>(height))throw Failure("PRE-001 requires <= 12 MP full-resolution image");const auto raster=decode(slurp(app.root/col(image.p,0)),col(image.p,1));const auto result=morfo::pre::perceive(raster.w,raster.h,raster.rgba);std::vector<std::size_t> counts(result.prototypes.size());for(const auto& cell:result.cells)++counts[cell.cluster];std::ostringstream out;out<<"{\"schema\":\"morfo.pre.001.run.v1\",\"data\":{\"profile\":\"discovery\",\"version\":"<<q(morfo::pre::version)<<",\"scientific_status\":\"EXPERIMENTAL\",\"semantics\":\"UNNAMED_MORPHOTYPES\",\"original_sha256\":"<<q(col(image.p,4))<<",\"width\":"<<result.width<<",\"height\":"<<result.height<<",\"cell_size\":32,\"morphotypes\":[";for(std::size_t c=0;c<result.prototypes.size();++c){if(c)out<<',';out<<"{\"id\":\"MORFOTIPO-"<<std::setw(3)<<std::setfill('0')<<(c+1)<<"\",\"cell_count\":"<<counts[c]<<",\"prototype\":[";for(std::size_t f=0;f<8;++f){if(f)out<<',';out<<result.prototypes[c].values[f];}out<<"]}";}out<<"],\"cells\":[";bool first=true;for(const auto& cell:result.cells){if(!first)out<<',';first=false;out<<"{\"x\":"<<cell.x<<",\"y\":"<<cell.y<<",\"width\":"<<cell.width<<",\"height\":"<<cell.height<<",\"morphotype\":\"MORFOTIPO-"<<std::setw(3)<<std::setfill('0')<<(cell.cluster+1)<<"\",\"distance\":"<<cell.distance<<",\"novelty\":"<<cell.novelty<<'}';}out<<"]}}";return out.str();
+}
 static std::string morfo_profile_artifact(const App& app,const std::string& image_id,const std::string& user_id,const std::string& suffix,std::string& mime){
  const auto slash=suffix.find('/');if(slash==std::string::npos)throw Failure("Invalid profile artifact");
  const auto run_id=suffix.substr(0,slash),kind=suffix.substr(slash+1);
@@ -1627,6 +1631,7 @@ static Response handle(const App& app,const http::request<http::string_body>& re
       if(req.method()==http::verb::get)return respond(http::status::ok,v,morfo_profile_list(app,id,user->id));
      }catch(const std::exception& e){return problem(v,std::string(e.what())=="Image not found"?http::status::not_found:http::status::unprocessable_entity,e.what());}
     }
+    if(kind=="profiles/discovery"&&req.method()==http::verb::post){try{return respond(http::status::created,v,morfo_discover(app,id,user->id));}catch(const std::exception& e){return problem(v,std::string(e.what())=="Image not found"?http::status::not_found:http::status::unprocessable_entity,e.what());}}
     if(kind=="refinements"){
      try{if(req.method()==http::verb::get)return respond(http::status::ok,v,image_refinements(app,id,user->id));if(req.method()==http::verb::post){if(req[http::field::content_type].find("application/json")!=0)return problem(v,http::status::unsupported_media_type,"Use application/json");return respond(http::status::created,v,create_refinement(app,id,user->id,req.body()));}}catch(const std::exception& e){const std::string message=e.what();return problem(v,message=="Profile run not found"||message=="Image not found"?http::status::not_found:http::status::unprocessable_entity,message);}
     }

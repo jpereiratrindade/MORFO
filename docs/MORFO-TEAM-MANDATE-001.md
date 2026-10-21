@@ -25,7 +25,7 @@ Criar **MORFO v0.1.0** como novo repositório C++26 ao lado de RIZOMA, reutiliza
 - `./create-morfo.sh --source .../RIZOMA` cria MORFO e deixa origem intacta.
 - `cmake -S . -B build && cmake --build build --parallel && ctest --test-dir build --output-on-failure` conclui sem falhas no Toolbox alvo.
 - EXP-003: 850×757 px, **3339 pixels positivos e 30 componentes**, comparação exata com PNG referência.
-- `/api/v1/profiles` retorna `roots-exp003` e `discovery` marcado `PLANNED`.
+- Critério histórico cumprido e superado: `/api/v1/profiles` retorna `roots-exp003` e `discovery`; PRE-001 agora marca `discovery` como `EXPERIMENTAL` executável.
 - O perfil de raízes grava máscara/overlay/relatório, com acesso exclusivo do proprietário da imagem e histórico por execução.
 - Imagens maiores que 12 MP recebem erro explícito; não reamostrar a imagem para fabricar conformidade.
 - Teste de UI manual com imagem real e verificação de navegação/zoom.

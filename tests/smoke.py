@@ -434,7 +434,11 @@ def main():
 
             # MORFO thematic profile: backend EXP-003 runs, records, isolates derivatives.
             status, body, _ = req(base+'/api/v1/profiles')
-            assert status == 200 and b'roots-exp003' in body and b'PLANNED' in body
+            assert status == 200 and b'roots-exp003' in body and b'pre001-0.1.0-experimental' in body and b'UNNAMED_MORPHOTYPES' in body
+            status, body, _ = req(base+f'/api/v1/images/{analysis_image_id}/profiles/discovery','POST',b'',auth_headers)
+            discovery=json.loads(body)['data']
+            assert status==201 and discovery['semantics']=='UNNAMED_MORPHOTYPES' and len(discovery['morphotypes'])==3,(status,body)
+            assert discovery['cells'] and all(cell['morphotype'].startswith('MORFOTIPO-') for cell in discovery['cells'])
             profile_url = base+f'/api/v1/images/{analysis_image_id}/profiles/roots-exp003'
             status, body, _ = req(profile_url, 'POST', b'', auth_headers)
             assert status == 201, (status, body)

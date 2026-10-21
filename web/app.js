@@ -32,7 +32,7 @@ const STRATEGY_DESCRIPTIONS = {
   TABULAR_INCREMENTAL: {
     name: 'Nível 2: Classificador Tabular (Online ML)',
     badge: 'Aprendizado de Máquina Incremental',
-    summary: 'Extrai 8 atributos biométricos (área, perímetro, desvio RGB, gradientes) e treina um classificador linear online que ajusta seus pesos matemáticos a cada revisão humana.'
+    summary: 'Extrai 6 atributos regionais (razões local, global e compartilhada, área normalizada, aspecto e contato com borda) e treina classificador linear online a cada revisão humana.'
   },
   VISUAL_KNN: {
     name: 'Nível 3: Similaridade Visual k-NN & Active Learning',

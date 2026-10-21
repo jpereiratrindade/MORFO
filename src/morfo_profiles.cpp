@@ -144,7 +144,7 @@ void create_schema(sqlite3* db) {
   }
 }
 std::string registry_json(){
- return R"JSON({"data":[{"id":"roots-exp003","theme":"roots","name":"Raízes · Matriz adaptativa EXP-003","version":"exp003-original-0.1.0","status":"EXPERIMENTAL","output_semantics":"ANOMALY_CANDIDATE","biological_validation":"NOT_VALIDATED"},{"id":"discovery","theme":"generic","name":"Descoberta emergente REA/RIT","status":"PLANNED","output_semantics":"UNIMPLEMENTED"}]})JSON";
+ return R"JSON({"data":[{"id":"roots-exp003","theme":"roots","name":"Raízes · Matriz adaptativa EXP-003","version":"exp003-original-0.1.0","status":"EXPERIMENTAL","output_semantics":"ANOMALY_CANDIDATE","biological_validation":"NOT_VALIDATED"},{"id":"discovery","theme":"generic","name":"Perceptor genérico PRE-001","version":"pre001-0.1.0-experimental","status":"EXPERIMENTAL","output_semantics":"UNNAMED_MORPHOTYPES","biological_validation":"NOT_APPLICABLE"}]})JSON";
 }
 RootsOutput run_exp003(const fs::path& source,const fs::path& out_dir){
  // Preserve EXACT detector source in profiles/roots/exp003/src/core.cpp.
