@@ -282,8 +282,7 @@
       if(selected==='discovery'){
         const out=await json(`/api/v1/images/${encodeURIComponent(imageId)}/profiles/discovery`,{method:'POST'}),data=out.data;
         if(imageId!==state.imageId)return;
-        panel.innerHTML=`<div class="morfo-empty"><h3>${data.morphotypes.length} morfotipos provisórios</h3><p>PRE-001 agrupou ${data.cells.length} células sem nomes biológicos.</p>${data.morphotypes.map(item=>`<p><strong>${item.id}</strong> · ${item.cell_count} célula(s)</p>`).join('')}<p><small>Hipótese perceptiva experimental · ${data.version}</small></p></div>`;
-        message(`PRE-001 concluído · ${data.morphotypes.length} morfotipos · ${data.cells.length} células. Persistência e mapa visual: próximo incremento.`);return;
+        showDiscovery(data);message(`PRE-001 persistido · ${data.morphotypes.length} morfotipos · ${data.cells.length} células.`);return;
       }
       const out=await json(rootPath(imageId),{method:'POST'});
       if(imageId!==state.imageId)return;
@@ -296,6 +295,9 @@
     }catch(error){if(imageId===state.imageId)message(`Falha: ${error.message}`,'error');}
     finally{state.busy=false;if(button)button.disabled=!state.imageId || !state.profileAvailable;}
   }
+
+  function showDiscovery(data){layer.src=`/api/v1/images/${encodeURIComponent(state.imageId)}/profiles/discovery/${encodeURIComponent(data.id)}/map`;layer.classList.remove('hidden');layer.style.opacity=String(state.opacity);panel.innerHTML=`<div class="morfo-empty"><h3>${data.morphotypes.length} morfotipos provisórios</h3><p>PRE-001 agrupou ${data.cells.length} células sem nomes biológicos.</p>${data.morphotypes.map(item=>`<p><strong>${item.id}</strong> · ${item.cell_count} célula(s)</p>`).join('')}<p><a href="/api/v1/images/${encodeURIComponent(state.imageId)}/profiles/discovery/${encodeURIComponent(data.id)}/report" target="_blank" rel="noopener">Relatório JSON</a></p><p><small>Hipótese perceptiva experimental · ${data.version} · ${data.created_at}</small></p></div>`;}
+  async function loadDiscoveryHistory(){if(!state.imageId)return;try{const response=await json(`/api/v1/images/${encodeURIComponent(state.imageId)}/profiles/discovery`),runs=response.data||[];if(!runs.length){showPanelPlaceholder('Nenhuma execução PRE-001 persistida para esta imagem.');return;}panel.innerHTML=`<div class="morfo-empty"><h3>Histórico PRE-001</h3>${runs.map(run=>`<p><button type="button" data-pre-run="${run.id}">${run.created_at} · ${run.morphotype_count} morfotipos · ${run.id.slice(0,8)}</button></p>`).join('')}</div>`;panel.querySelectorAll('[data-pre-run]').forEach(button=>button.onclick=async()=>{const data=(await json(`/api/v1/images/${encodeURIComponent(state.imageId)}/profiles/discovery/${encodeURIComponent(button.dataset.preRun)}/report`)).data;showDiscovery(data);});message(`${runs.length} execução(ões) PRE-001 preservada(s).`);}catch(error){message(`Falha ao carregar PRE-001: ${error.message}`,'error');}}
 
   async function deleteProfileRun(){
     const imageId=state.imageId,runId=state.run?.id;
@@ -350,6 +352,7 @@
     layer.draggable=false;
     canvas.append(layer);
     $('morfo-run').addEventListener('click',startProfile);
+    $('morfo-theme').addEventListener('change',event=>{clearVisual();if(event.target.value==='discovery')loadDiscoveryHistory();else loadHistory(state.imageId,true);});
     $('morfo-refine').addEventListener('click',()=>$('start-refinement')?.click());
     $('morfo-delete-run').addEventListener('click',deleteProfileRun);
     $('morfo-evaluate-run').addEventListener('click',addRunToEvaluation);

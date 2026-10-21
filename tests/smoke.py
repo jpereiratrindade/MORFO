@@ -437,8 +437,14 @@ def main():
             assert status == 200 and b'roots-exp003' in body and b'pre001-0.1.0-experimental' in body and b'UNNAMED_MORPHOTYPES' in body
             status, body, _ = req(base+f'/api/v1/images/{analysis_image_id}/profiles/discovery','POST',b'',auth_headers)
             discovery=json.loads(body)['data']
-            assert status==201 and discovery['semantics']=='UNNAMED_MORPHOTYPES' and len(discovery['morphotypes'])==3,(status,body)
+            discovery_id=discovery['id']; assert status==201 and len(discovery_id)==24 and discovery['semantics']=='UNNAMED_MORPHOTYPES' and len(discovery['morphotypes'])==3,(status,body)
             assert discovery['cells'] and all(cell['morphotype'].startswith('MORFOTIPO-') for cell in discovery['cells'])
+            status,body,_=req(base+f'/api/v1/images/{analysis_image_id}/profiles/discovery',headers=auth_headers)
+            assert status==200 and json.loads(body)['data'][0]['id']==discovery_id,(status,body)
+            status,map_data,map_headers=req(base+f'/api/v1/images/{analysis_image_id}/profiles/discovery/{discovery_id}/map',headers=auth_headers)
+            assert status==200 and map_headers.get('Content-Type')=='image/png' and map_data.startswith(b'\x89PNG'),(status,map_data[:16])
+            status,report_data,_=req(base+f'/api/v1/images/{analysis_image_id}/profiles/discovery/{discovery_id}/report',headers=auth_headers)
+            assert status==200 and json.loads(report_data)['data']['id']==discovery_id,(status,report_data)
             profile_url = base+f'/api/v1/images/{analysis_image_id}/profiles/roots-exp003'
             status, body, _ = req(profile_url, 'POST', b'', auth_headers)
             assert status == 201, (status, body)
