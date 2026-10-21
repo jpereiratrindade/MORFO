@@ -665,6 +665,10 @@ static std::string create_evaluation_protocol(const App& app,const std::string& 
  return evaluation_protocols_json(app,user_id);
 }
 
+static std::string freeze_evaluation_protocol(const App& app,const std::string& user_id,const std::string& protocol_id){
+ Db db(app.root/"morfo.sqlite3");Stmt update(db.p,"UPDATE evaluation_protocols SET state='FROZEN' WHERE id=? AND owner_user_id=? AND state='DRAFT'");update.bind(1,protocol_id);update.bind(2,user_id);if(sqlite3_step(update.p)!=SQLITE_DONE)throw Failure(sqlite3_errmsg(db.p));if(sqlite3_changes(db.p)!=1){Stmt exists(db.p,"SELECT state FROM evaluation_protocols WHERE id=? AND owner_user_id=?");exists.bind(1,protocol_id);exists.bind(2,user_id);if(sqlite3_step(exists.p)!=SQLITE_ROW)throw Failure("Evaluation protocol not found");throw Failure("Protocol is already frozen");}return evaluation_protocols_json(app,user_id);
+}
+
 static std::string update_analysis_run(const App& app,const std::string& run_id,const std::string& user_id,const std::string& body){
  const std::string status=json_extract_string(body,"status");
  const std::string notes=json_extract_string(body,"notes");
@@ -1459,7 +1463,7 @@ static Response handle(const App& app,const http::request<http::string_body>& re
  if(req.method()==http::verb::get&&p=="/api/v1/refinement-parameters")return respond(http::status::ok,v,refinement_parameters_contract());
 
  // Protected routes
- if(p=="/api/v1/images"||p=="/api/v1/root-metrics"||p=="/api/v1/evaluation/overview"||p=="/api/v1/evaluation/protocols"||p=="/api/v1/parameter-presets"||p=="/api/v1/export/manifest.csv"||p.starts_with("/api/v1/images/")||p.starts_with("/api/v1/refinements/")||p.starts_with("/api/v1/parameter-presets/")||p.starts_with("/api/v1/analysis-regions/")||p.starts_with("/api/v1/analysis-runs/")||p.starts_with("/api/v1/root-metrics/")||p.starts_with("/api/v1/calibrations/")){
+ if(p=="/api/v1/images"||p=="/api/v1/root-metrics"||p=="/api/v1/evaluation/overview"||p=="/api/v1/evaluation/protocols"||p=="/api/v1/parameter-presets"||p=="/api/v1/export/manifest.csv"||p.starts_with("/api/v1/evaluation/protocols/")||p.starts_with("/api/v1/images/")||p.starts_with("/api/v1/refinements/")||p.starts_with("/api/v1/parameter-presets/")||p.starts_with("/api/v1/analysis-regions/")||p.starts_with("/api/v1/analysis-runs/")||p.starts_with("/api/v1/root-metrics/")||p.starts_with("/api/v1/calibrations/")){
   auto user=authenticate(app,req);
   if(!user){
    return problem(v,http::status::unauthorized,"Autenticação necessária. Solicite uma chave de acesso para seu e-mail.");
@@ -1471,6 +1475,7 @@ static Response handle(const App& app,const http::request<http::string_body>& re
   if(p=="/api/v1/evaluation/protocols"){
    try{if(req.method()==http::verb::get)return respond(http::status::ok,v,evaluation_protocols_json(app,user->id));if(req.method()==http::verb::post){if(req[http::field::content_type].find("application/json")!=0)return problem(v,http::status::unsupported_media_type,"Use application/json");return respond(http::status::created,v,create_evaluation_protocol(app,user->id,req.body()));}}catch(const std::exception& e){return problem(v,http::status::unprocessable_entity,e.what());}
   }
+  if(p.starts_with("/api/v1/evaluation/protocols/")&&req.method()==http::verb::post){const std::string rem=p.substr(std::string("/api/v1/evaluation/protocols/").size());const auto slash=rem.find('/');const std::string protocol_id=rem.substr(0,slash);if(!valid_id(protocol_id)||slash==std::string::npos||rem.substr(slash+1)!="freeze")return problem(v,http::status::bad_request,"Invalid evaluation protocol action");try{return respond(http::status::ok,v,freeze_evaluation_protocol(app,user->id,protocol_id));}catch(const std::exception& e){return problem(v,std::string(e.what())=="Evaluation protocol not found"?http::status::not_found:http::status::unprocessable_entity,e.what());}}
   if(p=="/api/v1/parameter-presets"){
    try{if(req.method()==http::verb::get)return respond(http::status::ok,v,parameter_presets(app,user->id));if(req.method()==http::verb::post){if(req[http::field::content_type].find("application/json")!=0)return problem(v,http::status::unsupported_media_type,"Use application/json");return respond(http::status::created,v,save_parameter_preset(app,user->id,req.body()));}}catch(const std::exception& e){return problem(v,http::status::unprocessable_entity,e.what());}
   }

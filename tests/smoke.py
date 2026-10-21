@@ -227,13 +227,18 @@ def main():
                 'task':'SEGMENTATION', 'experimental_unit':'planta',
                 'split_strategy':'Agrupada por planta e sessão',
                 'acceptance_criteria':'Dice com IC 95% e análise de perdas',
-                'limitations':'Primeiro domínio: raízes', 'state':'FROZEN'
+                'limitations':'Primeiro domínio: raízes', 'state':'DRAFT'
             }
             status,body,_=req(base+'/api/v1/evaluation/protocols','POST',json.dumps(protocol).encode(),{'Content-Type':'application/json',**auth_headers})
             assert status==201,(status,body)
             protocols=json.loads(body)['data']
-            assert len(protocols)==1 and protocols[0]['version']==1 and protocols[0]['state']=='FROZEN'
+            assert len(protocols)==1 and protocols[0]['version']==1 and protocols[0]['state']=='DRAFT'
             assert protocols[0]['acceptance_criteria']['statement']==protocol['acceptance_criteria']
+            protocol_id=protocols[0]['id']
+            status,body,_=req(base+f'/api/v1/evaluation/protocols/{protocol_id}/freeze','POST',b'',auth_headers)
+            assert status==200 and json.loads(body)['data'][0]['state']=='FROZEN',(status,body)
+            status,body,_=req(base+f'/api/v1/evaluation/protocols/{protocol_id}/freeze','POST',b'',auth_headers)
+            assert status==422,(status,body)
             status,body,_=req(base+'/api/v1/evaluation/protocols',headers=auth_headers)
             assert status==200 and len(json.loads(body)['data'])==1
             status,body,_=req(base+'/api/v1/evaluation/overview',headers=auth_headers)

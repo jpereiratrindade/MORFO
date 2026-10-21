@@ -19,6 +19,7 @@ const $ = id => document.getElementById(id);
 const h = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const number = new Intl.NumberFormat('pt-BR');
 let images = [], selectedFiles = [], rootMetricRecords = [], current = null, mode = 'original', currentUser = null, currentAnalysis = null, analysisRuns = [], selectedRegion = null;
+let evaluationProtocols = [];
 let viewer = {imageId:null, manifest:null, scale:1, x:0, y:0, fit:true, drag:null, revision:0, frame:0};
 const viewNames = {acervo:'Acervo de imagens',recebimento:'Recebimento',analises:'Análises radiculares',avaliacao:'Avaliação científica',integridade:'Integridade e origem',sobre:'Sobre o MORFO',usuarios:'Gestão de Usuários & Acesso'};
 
@@ -91,9 +92,24 @@ async function loadEvaluation(){
 }
 
 function renderEvaluationProtocols(protocols){
+ evaluationProtocols=protocols;
  const target=$('evaluation-protocol-list');
  if(!protocols.length){target.innerHTML='<div class="empty"><h3>Nenhum protocolo constituído.</h3><p>Crie hipótese, tarefa, unidade experimental e critério de aceitação.</p></div>';return;}
- target.innerHTML=`<div class="protocol-list">${protocols.map(item=>`<article class="protocol-card"><header><div><span>${h(item.task)}</span><h3>${h(item.title)} <small>v${number.format(item.version)}</small></h3></div><b class="protocol-state ${item.state==='FROZEN'?'frozen':'draft'}">${item.state==='FROZEN'?'CONGELADO':'RASCUNHO'}</b></header><p>${h(item.hypothesis)}</p><dl><div><dt>Unidade experimental</dt><dd>${h(item.experimental_unit)}</dd></div><div><dt>Separação</dt><dd>${h(item.split_strategy)}</dd></div><div><dt>Critério</dt><dd>${h(item.acceptance_criteria?.statement||'—')}</dd></div></dl>${item.limitations?`<footer><strong>Limitações:</strong> ${h(item.limitations)}</footer>`:''}</article>`).join('')}</div>`;
+ target.innerHTML=`<div class="protocol-list">${protocols.map(item=>`<article class="protocol-card"><header><div><span>${h(item.task)}</span><h3>${h(item.title)} <small>v${number.format(item.version)}</small></h3></div><b class="protocol-state ${item.state==='FROZEN'?'frozen':'draft'}">${item.state==='FROZEN'?'CONGELADO':'RASCUNHO'}</b></header><p>${h(item.hypothesis)}</p><dl><div><dt>Unidade experimental</dt><dd>${h(item.experimental_unit)}</dd></div><div><dt>Separação</dt><dd>${h(item.split_strategy)}</dd></div><div><dt>Critério</dt><dd>${h(item.acceptance_criteria?.statement||'—')}</dd></div></dl>${item.limitations?`<footer><strong>Limitações:</strong> ${h(item.limitations)}</footer>`:''}<div class="protocol-actions"><button class="button outline" type="button" data-protocol-version="${h(item.id)}">Criar nova versão</button>${item.state==='DRAFT'?`<button class="button primary" type="button" data-protocol-freeze="${h(item.id)}">Congelar protocolo</button>`:'<span>Versão imutável</span>'}</div></article>`).join('')}</div>`;
+ target.querySelectorAll('[data-protocol-version]').forEach(button=>button.onclick=()=>newEvaluationProtocolVersion(button.dataset.protocolVersion));
+ target.querySelectorAll('[data-protocol-freeze]').forEach(button=>button.onclick=()=>freezeEvaluationProtocol(button.dataset.protocolFreeze,button));
+}
+
+function openEvaluationProtocol(protocol=null){
+ $('evaluation-protocol-form').reset();
+ if(protocol){$('evaluation-title-input').value=protocol.title;$('evaluation-hypothesis').value=protocol.hypothesis;$('evaluation-task').value=protocol.task;$('evaluation-unit').value=protocol.experimental_unit;$('evaluation-split').value=protocol.split_strategy;$('evaluation-criteria').value=protocol.acceptance_criteria?.statement||'';$('evaluation-limitations').value=protocol.limitations||'';$('evaluation-protocol-title').textContent=`Nova versão · ${protocol.title}`;}
+ else $('evaluation-protocol-title').textContent='Novo protocolo científico';
+ $('evaluation-protocol-modal').classList.remove('hidden');
+}
+function newEvaluationProtocolVersion(id){const protocol=evaluationProtocols.find(item=>item.id===id);if(protocol)openEvaluationProtocol(protocol);}
+async function freezeEvaluationProtocol(id,button){
+ if(!confirm('Congelar este protocolo? Esta versão se tornará imutável.'))return;button.disabled=true;
+ try{await api(`/api/v1/evaluation/protocols/${id}/freeze`,{method:'POST'});await loadEvaluation();toast('Protocolo congelado. Versão preservada.');}catch(error){toast(error.message);}finally{button.disabled=false;}
 }
 
 function closeEvaluationProtocol(){$('evaluation-protocol-modal').classList.add('hidden');}
@@ -2013,7 +2029,7 @@ restoreInspectorSize();
 for(const b of document.querySelectorAll('[data-view]')) b.addEventListener('click', () => nav(b.dataset.view));
 $('hero-upload').onclick = () => nav('recebimento');
 if($('refresh-evaluation')) $('refresh-evaluation').onclick=loadEvaluation;
-if($('new-evaluation-protocol')) $('new-evaluation-protocol').onclick=()=>$('evaluation-protocol-modal').classList.remove('hidden');
+if($('new-evaluation-protocol')) $('new-evaluation-protocol').onclick=()=>openEvaluationProtocol();
 if($('close-evaluation-protocol')) $('close-evaluation-protocol').onclick=closeEvaluationProtocol;
 if($('cancel-evaluation-protocol')) $('cancel-evaluation-protocol').onclick=closeEvaluationProtocol;
 if($('evaluation-protocol-form')) $('evaluation-protocol-form').addEventListener('submit',createEvaluationProtocol);
