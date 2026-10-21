@@ -61,6 +61,8 @@ target_link_libraries(morfo-server PRIVATE Threads::Threads OpenSSL::Crypto SQLi
 target_compile_definitions(morfo-server PRIVATE BOOST_ERROR_CODE_HEADER_ONLY BOOST_SYSTEM_NO_DEPRECATED)
 target_compile_options(morfo-server PRIVATE -Wall -Wextra -Wpedantic)
 
+include(CTest)
+
 if(BUILD_TESTING)
   add_executable(morfo-migrate-only tests/migrate_only.cpp src/database.cpp)
   target_include_directories(morfo-migrate-only PRIVATE ${CMAKE_SOURCE_DIR}/src)
@@ -73,7 +75,6 @@ if(BUILD_TESTING)
   add_test(NAME morfo.auth-smtp COMMAND morfo-auth-smtp-tests)
 endif()
 
-include(CTest)
 find_package(Python3 COMPONENTS Interpreter)
 if(BUILD_TESTING AND Python3_Interpreter_FOUND)
   add_test(NAME rizoma.http-smoke COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/smoke.py $<TARGET_FILE:morfo-server> ${CMAKE_SOURCE_DIR}/web)
