@@ -456,11 +456,27 @@ def main():
             dataset=datasets[0]; dataset_id=dataset['id']
             assert dataset['state']=='DRAFT' and len(dataset['content_sha256'])==64 and len(dataset['units'])==1,dataset
             assert dataset['units'][0]['profile_run_id']==profile_id and dataset['units'][0]['group_key']=='plant-001',dataset
+            unit_id=dataset['units'][0]['id']
+            status,body,_=req(base+f'/api/v1/evaluation/datasets/{dataset_id}/units/{unit_id}','PATCH',json.dumps({'split':'TEST','group_key':'plant-002'}).encode(),{'Content-Type':'application/json',**auth_headers})
+            edited=json.loads(body)['data'][0]['units'][0]; assert status==200 and edited['split']=='TEST' and edited['group_key']=='plant-002',(status,body)
+            status,body,_=req(base+f'/api/v1/evaluation/datasets/{dataset_id}/units/{unit_id}','DELETE',b'',auth_headers)
+            assert status==200 and json.loads(body)['data'][0]['units']==[],(status,body)
+            status, body, _ = req(base+f'/api/v1/evaluation/protocols/{protocol_id}/units','POST',json.dumps(unit_body).encode(),{'Content-Type':'application/json',**auth_headers})
+            linked=json.loads(body)['data']; assert status==201 and linked['unit_count']==1,(status,body)
+            status,body,_=req(base+'/api/v1/evaluation/datasets',headers=auth_headers)
+            unit_id=json.loads(body)['data'][0]['units'][0]['id']
             status,body,_=req(base+f'/api/v1/evaluation/protocols/{protocol_id}/freeze','POST',b'',auth_headers)
             assert status==422 and b'Freeze evaluation datasets' in body,(status,body)
             status,body,_=req(base+f'/api/v1/evaluation/datasets/{dataset_id}/freeze','POST',b'',auth_headers)
+            assert status==422 and b'independent reference mask' in body,(status,body)
+            status,body,_=req(base+f'/api/v1/evaluation/datasets/{dataset_id}/units/{unit_id}/reference','POST',candidate,{'Content-Type':'image/png','X-Reference-Filename':'specialist-mask.png',**auth_headers})
+            referenced=json.loads(body)['data'][0]['units'][0]
+            assert status==201 and referenced['reference_filename']=='specialist-mask.png' and len(referenced['reference_sha256'])==64,(status,body)
+            status,body,_=req(base+f'/api/v1/evaluation/datasets/{dataset_id}/freeze','POST',b'',auth_headers)
             frozen_dataset=json.loads(body)['data'][0]
             assert status==200 and frozen_dataset['state']=='FROZEN' and frozen_dataset['frozen_at'],(status,body)
+            status,body,_=req(base+f'/api/v1/evaluation/datasets/{dataset_id}/units/{unit_id}','DELETE',b'',auth_headers)
+            assert status==404,(status,body)
             status,body,_=req(base+f'/api/v1/evaluation/protocols/{protocol_id}/freeze','POST',b'',auth_headers)
             assert status==200 and json.loads(body)['data'][0]['state']=='FROZEN',(status,body)
             status,body,_=req(base+f'/api/v1/evaluation/protocols/{protocol_id}/units','POST',json.dumps(unit_body).encode(),{'Content-Type':'application/json',**auth_headers})

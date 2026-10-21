@@ -35,7 +35,11 @@ Critérios numéricos ficam deliberadamente fora desta fundação até conjunto 
 - SQLite migração 6: protocolos, conjuntos, unidades, execuções, observações e resumos.
 - Travas: evidência imutável; referência obrigatória para métricas supervisionadas; grupo experimental não cruza desenvolvimento/teste.
 - Testes unitários e de invariantes do banco.
+- Fluxo autenticado para criar/versionar protocolos e vincular execuções EXP-003.
+- Conjuntos em rascunho com edição de grupo/split, remoção de unidades e manifesto SHA-256 recalculado.
+- Ingestão de máscaras PNG independentes, com autoria, data, hash e validação dimensional.
+- Congelamento de conjunto e protocolo, tornando unidades e referências imutáveis.
 
 ## Próximo incremento
 
-Ingestão autenticada de protocolo/conjunto/referência, executor comparativo dos três métodos, relatório HTML/CSV e bancada web Resultados–Comparação–Auditoria. Painel só exibirá dados reais; nenhuma métrica demonstrativa será semeada.
+Executor comparativo dos métodos congelados, métricas por unidade, bootstrap, relatório HTML/CSV e bancadas funcionais Comparação–Auditoria. Painel só exibirá dados reais; nenhuma métrica demonstrativa será semeada.

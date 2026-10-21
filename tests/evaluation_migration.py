@@ -28,5 +28,18 @@ with tempfile.TemporaryDirectory(prefix="morfo-evaluate-") as name:
         raise AssertionError("observation overwrite accepted")
     except sqlite3.IntegrityError as error:
         assert "immutable" in str(error)
+    try:
+        db.execute("UPDATE evaluation_units SET group_key='changed' WHERE id='a'")
+        raise AssertionError("frozen unit overwrite accepted")
+    except sqlite3.IntegrityError as error:
+        assert "immutable" in str(error)
+    db.execute("INSERT INTO evaluation_protocols VALUES('pd','u','draft','h','SEGMENTATION','plant','grouped','{}','none','DRAFT',1,'t')")
+    db.execute("INSERT INTO evaluation_datasets(id,protocol_id,name,content_sha256,reference_kind,frozen_at,created_at,state) VALUES('dd','pd','draft','sha','NONE','','t','DRAFT')")
+    db.execute("INSERT INTO evaluation_units(id,dataset_id,external_key,split,group_key,input_sha256,metadata_json) VALUES('ud','dd','ud','DEVELOPMENT','plant-d','sha-d','{}')")
+    db.execute("UPDATE evaluation_units SET group_key='plant-edited',reference_sha256='ref' WHERE id='ud'")
+    assert db.execute("SELECT group_key,reference_sha256 FROM evaluation_units WHERE id='ud'").fetchone()==('plant-edited','ref')
+    db.execute("DELETE FROM evaluation_units WHERE id='ud'")
+    assert db.execute("SELECT COUNT(*) FROM evaluation_units WHERE id='ud'").fetchone()[0]==0
+    assert db.execute("SELECT name FROM schema_migrations WHERE version=8").fetchone()[0].startswith("manage-draft")
     assert db.execute("SELECT version,name FROM schema_migrations WHERE version=6").fetchone()[1].startswith("morfo-dev-002")
     print("MORFO-AVALIA migration PASS: immutable evidence, independent reference, no split leakage")
