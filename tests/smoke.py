@@ -445,6 +445,15 @@ def main():
             assert status==200 and map_headers.get('Content-Type')=='image/png' and map_data.startswith(b'\x89PNG'),(status,map_data[:16])
             status,report_data,_=req(base+f'/api/v1/images/{analysis_image_id}/profiles/discovery/{discovery_id}/report',headers=auth_headers)
             assert status==200 and json.loads(report_data)['data']['id']==discovery_id,(status,report_data)
+            revision_url=base+f'/api/v1/images/{analysis_image_id}/profiles/discovery/{discovery_id}/revisions'
+            status,body,_=req(revision_url,'POST',json.dumps({'action':'ACCEPT','source_morphotype':'MORFOTIPO-001','notes':'Padrão coerente'}).encode(),{'Content-Type':'application/json',**auth_headers})
+            revisions=json.loads(body)['data']; assert status==201 and revisions[0]['ordinal']==1 and revisions[0]['action']=='ACCEPT',(status,body)
+            status,body,_=req(revision_url,'POST',json.dumps({'action':'MERGE','source_morphotype':'MORFOTIPO-002','target_morphotype':'MORFOTIPO-001','notes':'Protótipos equivalentes'}).encode(),{'Content-Type':'application/json',**auth_headers})
+            revisions=json.loads(body)['data']; assert status==201 and revisions[1]['previous_revision_id']==revisions[0]['id'] and revisions[1]['result_morphotype']=='MORFOTIPO-001',(status,body)
+            status,body,_=req(revision_url,'POST',json.dumps({'action':'SPLIT','source_morphotype':'MORFOTIPO-003','novelty_threshold':1.5,'notes':'Separar novidade alta'}).encode(),{'Content-Type':'application/json',**auth_headers})
+            revisions=json.loads(body)['data']; assert status==201 and revisions[2]['result_morphotype'].startswith('MORFOTIPO-R'),(status,body)
+            status,body,_=req(revision_url,headers=auth_headers)
+            assert status==200 and len(json.loads(body)['data'])==3,(status,body)
             profile_url = base+f'/api/v1/images/{analysis_image_id}/profiles/roots-exp003'
             status, body, _ = req(profile_url, 'POST', b'', auth_headers)
             assert status == 201, (status, body)

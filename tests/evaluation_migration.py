@@ -42,5 +42,6 @@ with tempfile.TemporaryDirectory(prefix="morfo-evaluate-") as name:
     assert db.execute("SELECT COUNT(*) FROM evaluation_units WHERE id='ud'").fetchone()[0]==0
     assert db.execute("SELECT name FROM schema_migrations WHERE version=8").fetchone()[0].startswith("manage-draft")
     assert db.execute("SELECT name FROM schema_migrations WHERE version=9").fetchone()[0].startswith("persist-pre001")
+    assert db.execute("SELECT name FROM schema_migrations WHERE version=10").fetchone()[0].startswith("version-pre001")
     assert db.execute("SELECT version,name FROM schema_migrations WHERE version=6").fetchone()[1].startswith("morfo-dev-002")
     print("MORFO-AVALIA migration PASS: immutable evidence, independent reference, no split leakage")

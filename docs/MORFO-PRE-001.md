@@ -29,4 +29,6 @@ Posição XY ajuda coerência espacial nesta primeira versão, mas pode dominar 
 
 ## Próximos incrementos
 
-Permitir aceitar/dividir/unir/rejeitar morfotipos sem sobrescrever versões, detectar novidade entre imagens e avaliar o mesmo núcleo em domínios distintos.
+Revisões REA/RIT append-only permitem aceitar, rejeitar, unir e dividir morfotipos sem sobrescrever a execução original. Divisão registra limiar de novidade e novo identificador provisório.
+
+Próximos passos: materializar mapas revisados, detectar novidade entre imagens e avaliar o mesmo núcleo em domínios distintos.

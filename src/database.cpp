@@ -13,7 +13,7 @@
 namespace rizoma::database {
 namespace {
 
-constexpr int latest_version=9;
+constexpr int latest_version=10;
 constexpr std::string_view migration_name="establish-v0.2.0-schema-and-history";
 // SHA-256 of the reviewed migration specification. Changing migration 1 requires
 // a new migration, never replacement of this checksum.
@@ -34,6 +34,8 @@ constexpr std::string_view evaluation_reference_migration_name="manage-draft-uni
 constexpr std::string_view evaluation_reference_migration_checksum="c832115104711345f823960adf0215720e269892332806e8209fd4313143f14d";
 constexpr std::string_view pre_history_migration_name="persist-pre001-perception-history";
 constexpr std::string_view pre_history_migration_checksum="d231ad9052ccb2889bddc5fd83866408ce86387e1f2e2962e5ad8581ed02c499";
+constexpr std::string_view pre_review_migration_name="version-pre001-morphotype-reviews";
+constexpr std::string_view pre_review_migration_checksum="9ae837e6576dca1af2d73feec133003439cb47d33779dcb407948425c310e16f";
 
 
 std::string sqlite_error(sqlite3* db,const std::string& context){
@@ -395,6 +397,19 @@ CREATE TRIGGER morfo_pre_cells_no_update BEFORE UPDATE ON morfo_pre_cells BEGIN 
 CREATE TRIGGER morfo_pre_cells_no_delete BEFORE DELETE ON morfo_pre_cells BEGIN SELECT RAISE(ABORT,'PRE cells are retained'); END;
 )SQL");
 }
+void apply_migration_10(sqlite3* db){execute(db,R"SQL(
+CREATE TABLE morfo_pre_revisions(
+ id TEXT PRIMARY KEY,run_id TEXT NOT NULL REFERENCES morfo_pre_runs(id),user_id TEXT NOT NULL REFERENCES users(id),
+ previous_revision_id TEXT REFERENCES morfo_pre_revisions(id),ordinal INTEGER NOT NULL,
+ action TEXT NOT NULL CHECK(action IN('ACCEPT','REJECT','MERGE','SPLIT')),
+ source_morphotype TEXT NOT NULL,target_morphotype TEXT,result_morphotype TEXT,
+ novelty_threshold REAL,notes TEXT NOT NULL,payload_json TEXT NOT NULL,created_at TEXT NOT NULL,
+ UNIQUE(run_id,ordinal)
+);
+CREATE INDEX idx_morfo_pre_revisions_run ON morfo_pre_revisions(run_id,ordinal);
+CREATE TRIGGER morfo_pre_revisions_no_update BEFORE UPDATE ON morfo_pre_revisions BEGIN SELECT RAISE(ABORT,'PRE revisions are immutable'); END;
+CREATE TRIGGER morfo_pre_revisions_no_delete BEFORE DELETE ON morfo_pre_revisions BEGIN SELECT RAISE(ABORT,'PRE revisions are retained'); END;
+)SQL");}
 
 void verify_database(sqlite3* db){
  {
@@ -465,7 +480,7 @@ void migrate(const std::filesystem::path& file){
    version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL
   ))SQL");
   Statement known(db,"SELECT version,name,checksum FROM schema_migrations ORDER BY version");
-  bool applied=false,analysis_applied=false,learning_applied=false,crud_applied=false,auth_smtp_applied=false,evaluate_applied=false,evaluation_link_applied=false,evaluation_reference_applied=false,pre_history_applied=false;
+  bool applied=false,analysis_applied=false,learning_applied=false,crud_applied=false,auth_smtp_applied=false,evaluate_applied=false,evaluation_link_applied=false,evaluation_reference_applied=false,pre_history_applied=false,pre_review_applied=false;
   while(sqlite3_step(known.get())==SQLITE_ROW){
    const int version=sqlite3_column_int(known.get(),0);
    if(version>latest_version)throw std::runtime_error("Database was migrated by a newer RIZOMA version");
@@ -502,6 +517,7 @@ void migrate(const std::filesystem::path& file){
    if(version==7){evaluation_link_applied=true;if(known.text(1)!=evaluation_link_migration_name||known.text(2)!=evaluation_link_migration_checksum)throw std::runtime_error("Migration 7 checksum or name does not match the application");}
    if(version==8){evaluation_reference_applied=true;if(known.text(1)!=evaluation_reference_migration_name||known.text(2)!=evaluation_reference_migration_checksum)throw std::runtime_error("Migration 8 checksum or name does not match the application");}
    if(version==9){pre_history_applied=true;if(known.text(1)!=pre_history_migration_name||known.text(2)!=pre_history_migration_checksum)throw std::runtime_error("Migration 9 checksum or name does not match the application");}
+   if(version==10){pre_review_applied=true;if(known.text(1)!=pre_review_migration_name||known.text(2)!=pre_review_migration_checksum)throw std::runtime_error("Migration 10 checksum or name does not match the application");}
   }
   if(analysis_applied&&!applied)throw std::runtime_error("Migration history is not contiguous");
   if(learning_applied&&!analysis_applied)throw std::runtime_error("Migration history is not contiguous");
@@ -511,6 +527,7 @@ void migrate(const std::filesystem::path& file){
   if(evaluation_link_applied&&!evaluate_applied)throw std::runtime_error("Migration history is not contiguous");
   if(evaluation_reference_applied&&!evaluation_link_applied)throw std::runtime_error("Migration history is not contiguous");
   if(pre_history_applied&&!evaluation_reference_applied)throw std::runtime_error("Migration history is not contiguous");
+  if(pre_review_applied&&!pre_history_applied)throw std::runtime_error("Migration history is not contiguous");
   if(!applied){
    apply_migration_1(db);
    Statement record(db,"INSERT INTO schema_migrations(version,name,checksum,applied_at) VALUES(1,?,?,?)");
@@ -550,6 +567,7 @@ void migrate(const std::filesystem::path& file){
   if(!evaluation_link_applied){apply_migration_7(db);Statement record(db,"INSERT INTO schema_migrations(version,name,checksum,applied_at) VALUES(7,?,?,?)");record.bind(1,std::string(evaluation_link_migration_name));record.bind(2,std::string(evaluation_link_migration_checksum));record.bind(3,utc_now());if(sqlite3_step(record.get())!=SQLITE_DONE)throw std::runtime_error(sqlite_error(db,"Cannot record migration 7"));}
   if(!evaluation_reference_applied){apply_migration_8(db);Statement record(db,"INSERT INTO schema_migrations(version,name,checksum,applied_at) VALUES(8,?,?,?)");record.bind(1,std::string(evaluation_reference_migration_name));record.bind(2,std::string(evaluation_reference_migration_checksum));record.bind(3,utc_now());if(sqlite3_step(record.get())!=SQLITE_DONE)throw std::runtime_error(sqlite_error(db,"Cannot record migration 8"));}
   if(!pre_history_applied){apply_migration_9(db);Statement record(db,"INSERT INTO schema_migrations(version,name,checksum,applied_at) VALUES(9,?,?,?)");record.bind(1,std::string(pre_history_migration_name));record.bind(2,std::string(pre_history_migration_checksum));record.bind(3,utc_now());if(sqlite3_step(record.get())!=SQLITE_DONE)throw std::runtime_error(sqlite_error(db,"Cannot record migration 9"));}
+  if(!pre_review_applied){apply_migration_10(db);Statement record(db,"INSERT INTO schema_migrations(version,name,checksum,applied_at) VALUES(10,?,?,?)");record.bind(1,std::string(pre_review_migration_name));record.bind(2,std::string(pre_review_migration_checksum));record.bind(3,utc_now());if(sqlite3_step(record.get())!=SQLITE_DONE)throw std::runtime_error(sqlite_error(db,"Cannot record migration 10"));}
   verify_database(db);
   execute(db,"COMMIT");
   execute(db,"PRAGMA legacy_alter_table=OFF");

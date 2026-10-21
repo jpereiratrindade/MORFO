@@ -25,9 +25,9 @@ Os estados distinguem `OBSERVED`, `DERIVED`, `INFERRED`, `REVIEWED`, `VALIDATED`
 10. O projeto RIZOMA original não pode ser alterado por processos de criação do MORFO.
 
 ## REA e RIT
-REA — Reflexividade Epistêmica e Adaptativa: `OBSERVE → INTERPRET → COMPARE → REVISE_OR_PRESERVE`. Manifestação futura: propor abertura, divisão, fusão, revisão ou suspensão de categorias após evidência.
+REA — Reflexividade Epistêmica e Adaptativa: `OBSERVE → INTERPRET → COMPARE → REVISE_OR_PRESERVE`. Primeira manifestação executável: aceitar, rejeitar, dividir ou unir morfotipos do PRE-001 mediante decisão humana justificada.
 
-RIT — Reflexividade sob Integridade Temporal: todo ajuste mantém identidade do modelo, versão, dados, evento motivador, diferença de desempenho e possibilidade de auditoria/reversão. **REA/RIT continuam contratos conceituais. PRE-001 executa percepção genérica estática; ainda não adapta nem revisa categorias.**
+RIT — Reflexividade sob Integridade Temporal: todo ajuste mantém identidade do modelo, versão, dados, evento motivador, diferença de desempenho e possibilidade de auditoria/reversão. **A cadeia append-only de revisões PRE-001 implementa o primeiro núcleo RIT. Execução e mapa originais permanecem intactos; mapas materializados das revisões ainda são pendentes.**
 
 ## Organização dos perfis
 O registro distingue perfis `EXPERIMENTAL`, `VALIDATED` e `PLANNED`. `roots-exp003` executa análise temática; `discovery` executa PRE-001 genérico experimental. Nenhum deles é biologicamente validado. Perfis adicionais deverão criar implementações e testes, e não só opções de interface.
