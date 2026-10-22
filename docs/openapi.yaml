@@ -1,0 +1,649 @@
+openapi: 3.1.0
+info:
+  title: MORFO Core API & MCP Interface
+  version: 0.2.0
+  description: >
+    Plataforma de percepção visual autônoma, descoberta de padrões e classificação adaptativa.
+    Fornece contratos estritos para integração com a interface Web do MORFO, aplicações
+    externas (RIZOMA, NEXO, sensores de campo) e assistentes de inteligência artificial via MCP.
+    Regra constitutiva: Sempre pronto. Sempre incompleto.
+  contact:
+    name: MORFO Epistemic Platform
+    url: https://github.com/jpereiratrindade/MORFO
+  license:
+    name: GNU General Public License v3.0
+    url: https://www.gnu.org/licenses/gpl-3.0.html
+
+servers:
+  - url: http://localhost:8091
+    description: Servidor local de desenvolvimento e processamento MORFO
+
+paths:
+  /api/v1/health:
+    get:
+      summary: Verificação de saúde e prontidão do serviço
+      operationId: getHealth
+      tags:
+        - Sistema
+      responses:
+        '200':
+          description: Serviço operacional
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+
+  /api/v1/profiles:
+    get:
+      summary: Catálogo de perfis perceptivos versionados
+      description: >
+        Retorna o registro de perfis temáticos cadastrados no núcleo MORFO (e.g. roots-exp003, discovery/PRE-001).
+        Indica o estado ontológico e de validação de cada perfil (EXPERIMENTAL, VALIDATED, PLANNED).
+      operationId: listProfiles
+      tags:
+        - Perfis
+      responses:
+        '200':
+          description: Lista de perfis perceptivos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileListResponse'
+
+  /api/v1/images:
+    get:
+      summary: Listar imagens do acervo
+      description: Recupera o catálogo de imagens originais imutáveis armazenadas no sistema.
+      operationId: listImages
+      tags:
+        - Imagens
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Coleção de imagens do acervo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageListResponse'
+    post:
+      summary: Registrar imagem original
+      description: >
+        Faz a ingestão de uma imagem original. O arquivo é gravado de forma imutável, indexado
+        por seu hash SHA-256 e suas dimensões e metadados de aquisição são extraídos.
+      operationId: registerImage
+      tags:
+        - Imagens
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Arquivo original da imagem (TIFF, PNG, JPEG)
+                notes:
+                  type: string
+                  description: Observações de aquisição e procedência
+      responses:
+        '201':
+          description: Imagem registrada com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageSummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/images/{id}:
+    get:
+      summary: Consultar metadados e proveniência de imagem
+      operationId: getImage
+      tags:
+        - Imagens
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Identificador único da imagem original
+      responses:
+        '200':
+          description: Metadados da imagem
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/analyses:
+    post:
+      summary: Solicitar processamento perceptivo (Assíncrono)
+      description: >
+        Despacha o processamento de uma imagem por um perfil temático (ex: roots-exp003 ou discovery).
+        Gera um trabalho persistente na fila e retorna um identificador de trabalho imediatamente.
+      operationId: submitAnalysis
+      tags:
+        - Análises
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalysisRequest'
+      responses:
+        '202':
+          description: Tarefa de análise aceita e enfileirada para processamento
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobAcceptedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/jobs/{id}:
+    get:
+      summary: Acompanhar status de tarefa de processamento
+      description: Consulta o estado de execução de um job assíncrono (QUEUED, RUNNING, COMPLETED, FAILED).
+      operationId: getJobStatus
+      tags:
+        - Tarefas
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Identificador do job
+      responses:
+        '200':
+          description: Estado atual da tarefa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobStatusResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/analyses/{id}:
+    get:
+      summary: Consultar resultados científicos e evidências
+      description: Recupera o relatório analítico, contagens, desvios e metadados de execução gerados pelo perfil.
+      operationId: getAnalysisResult
+      tags:
+        - Análises
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Identificador da análise concluída
+      responses:
+        '200':
+          description: Resultados e métricas da análise
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisResult'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/analyses/{id}/mask:
+    get:
+      summary: Recuperar máscara binária gerada
+      description: Retorna a máscara de pixels derivada (PNG 1-bit ou 8-bit).
+      operationId: getAnalysisMask
+      tags:
+        - Análises
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Imagem PNG da máscara
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/analyses/{id}/overlay:
+    get:
+      summary: Recuperar sobreposição visual (overlay)
+      description: Retorna a imagem original combinada com a sobreposição das regiões candidatas detectadas.
+      operationId: getAnalysisOverlay
+      tags:
+        - Análises
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Imagem PNG/JPEG com sobreposição de diagnóstico
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/reviews:
+    post:
+      summary: Submeter julgamento científico humano (REA / RIT)
+      description: >
+        Registra na cadeia append-only uma decisão consciente do pesquisador sobre morfotipos ou anomalias
+        detectadas (aceitar, rejeitar, dividir, fundir). Alimenta o aprendizado adaptativo sob integridade temporal.
+      operationId: submitReview
+      tags:
+        - Governança & REA
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewSubmission'
+      responses:
+        '201':
+          description: Julgamento registrado e imutável
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewReceipt'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/comparisons:
+    post:
+      summary: Comparar execuções de diferentes métodos ou parâmetros
+      description: Realiza cálculo comparativo (IoU, Dice, matriz de confusão e desvio de centroides) entre duas análises da mesma imagem.
+      operationId: compareAnalyses
+      tags:
+        - Comparação
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ComparisonRequest'
+      responses:
+        '200':
+          description: Relatório comparativo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComparisonResult'
+
+  /mcp:
+    post:
+      summary: Ponto de entrada do protocolo MCP (Model Context Protocol)
+      description: >
+        Endpoint para transporte Streamable HTTP do MCP 2026. Permite que assistentes de inteligência
+        artificial descubram ferramentas (tools), leiam recursos (resources) e executem prompts de investigação.
+      operationId: handleMcpMessage
+      tags:
+        - MCP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Mensagem JSON-RPC 2.0 do protocolo MCP
+      responses:
+        '200':
+          description: Resposta JSON-RPC ou fluxo Streamable HTTP
+          content:
+            application/json:
+              schema:
+                type: object
+
+components:
+  responses:
+    BadRequest:
+      description: Requisição inválida ou parâmetros ausentes
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    NotFound:
+      description: Recurso solicitado não foi encontrado
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+  schemas:
+    ProblemDetails:
+      type: object
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+
+    HealthStatus:
+      type: object
+      required:
+        - status
+        - name
+        - version
+      properties:
+        status:
+          type: string
+          example: ok
+        name:
+          type: string
+          example: MORFO
+        version:
+          type: string
+          example: 0.2.0
+        scope:
+          type: string
+          example: perception-discovery-core
+
+    ProfileListResponse:
+      type: object
+      required:
+        - profiles
+      properties:
+        profiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProfileDescriptor'
+
+    ProfileDescriptor:
+      type: object
+      required:
+        - id
+        - name
+        - version
+        - status
+      properties:
+        id:
+          type: string
+          example: roots-exp003
+        name:
+          type: string
+          example: Raízes Temáticas EXP-003
+        version:
+          type: string
+          example: 1.0.0
+        status:
+          type: string
+          enum: [EXPERIMENTAL, VALIDATED, PLANNED]
+          example: EXPERIMENTAL
+        description:
+          type: string
+        epistemic_class:
+          type: string
+          example: ANOMALY_CANDIDATE
+
+    ImageSummary:
+      type: object
+      required:
+        - id
+        - sha256
+        - width
+        - height
+        - created_at
+      properties:
+        id:
+          type: string
+          example: img_01J9X8K01234
+        sha256:
+          type: string
+          example: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+        filename:
+          type: string
+          example: minirizotron_solo_candeia_001.tif
+        width:
+          type: integer
+          example: 2400
+        height:
+          type: integer
+          example: 1800
+        created_at:
+          type: string
+          format: date-time
+
+    ImageDetail:
+      allOf:
+        - $ref: '#/components/schemas/ImageSummary'
+        - type: object
+          properties:
+            channels:
+              type: integer
+              example: 3
+            format:
+              type: string
+              example: TIFF
+            runs_count:
+              type: integer
+              example: 4
+
+    ImageListResponse:
+      type: object
+      required:
+        - items
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImageSummary'
+        total:
+          type: integer
+
+    AnalysisRequest:
+      type: object
+      required:
+        - image_id
+        - profile_id
+      properties:
+        image_id:
+          type: string
+          example: img_01J9X8K01234
+        profile_id:
+          type: string
+          example: roots-exp003
+        parameters:
+          type: object
+          additionalProperties: true
+          description: Parâmetros específicos do perfil perceptivo
+
+    JobAcceptedResponse:
+      type: object
+      required:
+        - job_id
+        - status
+        - poll_url
+      properties:
+        job_id:
+          type: string
+          example: job_01J9X8K4B2M1QW8Z
+        status:
+          type: string
+          example: QUEUED
+        poll_url:
+          type: string
+          example: /api/v1/jobs/job_01J9X8K4B2M1QW8Z
+
+    JobStatusResponse:
+      type: object
+      required:
+        - job_id
+        - status
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+          enum: [QUEUED, RUNNING, COMPLETED, FAILED, CANCELLED]
+        progress:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          example: 0.75
+        analysis_id:
+          type: string
+          nullable: true
+          example: ana_01J9X8K5C3N2RX9Y
+        error_message:
+          type: string
+          nullable: true
+
+    AnalysisResult:
+      type: object
+      required:
+        - analysis_id
+        - image_id
+        - profile_id
+        - status
+        - execution_time_ms
+        - metrics
+      properties:
+        analysis_id:
+          type: string
+        image_id:
+          type: string
+        profile_id:
+          type: string
+        status:
+          type: string
+          example: DERIVED
+        execution_time_ms:
+          type: integer
+          example: 412
+        mask_sha256:
+          type: string
+        metrics:
+          type: object
+          properties:
+            candidate_pixels:
+              type: integer
+              example: 3339
+            components:
+              type: integer
+              example: 30
+            border_abstentions:
+              type: integer
+              example: 2
+
+    ReviewSubmission:
+      type: object
+      required:
+        - analysis_id
+        - action
+        - justification
+      properties:
+        analysis_id:
+          type: string
+        target_entity:
+          type: string
+          example: morphotype_4
+        action:
+          type: string
+          enum: [CONFIRM, REJECT, SPLIT, MERGE]
+        justification:
+          type: string
+          example: Evidência morfológica compatível com raiz secundária ativa, refutando artefato.
+
+    ReviewReceipt:
+      type: object
+      required:
+        - review_id
+        - analysis_id
+        - recorded_at
+        - auditor_sha256
+      properties:
+        review_id:
+          type: string
+        analysis_id:
+          type: string
+        recorded_at:
+          type: string
+          format: date-time
+        auditor_sha256:
+          type: string
+
+    ComparisonRequest:
+      type: object
+      required:
+        - image_id
+        - analysis_a
+        - analysis_b
+      properties:
+        image_id:
+          type: string
+        analysis_a:
+          type: string
+        analysis_b:
+          type: string
+
+    ComparisonResult:
+      type: object
+      required:
+        - iou
+        - dice
+        - overlap_pixels
+      properties:
+        iou:
+          type: number
+          example: 0.842
+        dice:
+          type: number
+          example: 0.914
+        overlap_pixels:
+          type: integer
+          example: 2850
+        divergence_pixels_a:
+          type: integer
+          example: 489
+        divergence_pixels_b:
+          type: integer
+          example: 124

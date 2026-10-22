@@ -1,6 +1,6 @@
 # MORFO-CONSTITUTION-001 — Constituição inicial
 
-**Versão:** 0.1.0 · **Data:** 2026-10-19 · **Estado:** CONSTITUTION_CANDIDATE · **Regra:** Sempre pronto. Sempre incompleto.
+**Versão:** 0.2.0 · **Data:** 2026-10-22 · **Estado:** CONSTITUTION_CANDIDATE · **Regra:** Sempre pronto. Sempre incompleto.
 
 ## Identidade e objeto
 MORFO é uma **plataforma autônoma de percepção visual e execução de perfis temáticos versionados**. Sua unidade primária é o arquivo original de imagem, nunca o experimento, a hipótese biológica ou uma classe predefinida.
@@ -23,6 +23,19 @@ Os estados distinguem `OBSERVED`, `DERIVED`, `INFERRED`, `REVIEWED`, `VALIDATED`
 8. Experimento de aprendizagem não deve modificar automaticamente a implementação de referência.
 9. Evidências de engenharia (CTest) não equivalem a evidências científicas (máscara anotada independente).
 10. O projeto RIZOMA original não pode ser alterado por processos de criação do MORFO.
+11. Nenhuma inferência ou resposta de assistente externo (MCP) pode reclassificar artefatos ou alterar estados ontológicos sem julgamento humano explícito, assinado e rastreável.
+12. Todas as interfaces de acesso (Web, API REST e MCP) operam sobre os mesmos contratos e serviços do núcleo C++26, garantindo reproducibilidade idêntica e ausência de regras epistêmicas paralelas.
+
+## Interfaces constitutivas e fronteiras epistêmicas
+O MORFO projeta suas capacidades por meio de três interfaces integradas a um mesmo núcleo de domínio C++26:
+- **Interface Web:** visualização, inspeção interativa, acervo e anotação direta pelo pesquisador.
+- **API REST (OpenAPI):** integração programática para aplicações externas, sensores, pipelines analíticos e equipamentos.
+- **Servidor MCP (Model Context Protocol):** exposição de ferramentas e recursos estruturados para investigação assistida por inteligência artificial.
+
+A separação epistêmica entre os atores é estrita e mandatória:
+- **Percepção (MORFO Core):** autoridade exclusiva sobre a extração de dados visuais, agrupamentos estatísticos e detecção de desvios. Não depende de IAs externas para perceber nem descobrir.
+- **Interpretação (MCP / Assistentes):** exploração heurística e formulação de hipóteses sobre os resultados produzidos pelo MORFO. Não produz fatos científicos nem altera dados.
+- **Validação e Julgamento (Pesquisador / REA / RIT):** decisão humana responsável que chancela, divide ou unifica morfotipos, alimentando o ciclo de aprendizagem sob integridade temporal.
 
 ## REA e RIT
 REA — Reflexividade Epistêmica e Adaptativa: `OBSERVE → INTERPRET → COMPARE → REVISE_OR_PRESERVE`. Primeira manifestação executável: aceitar, rejeitar, dividir ou unir morfotipos do PRE-001 mediante decisão humana justificada.

@@ -450,6 +450,15 @@ async function refresh(){
     }
   }
   try{
+    const health = await api('/api/v1/health');
+    if(health && health.version){
+      const vEl = $('connection-version');
+      if(vEl) vEl.textContent = 'v' + health.version;
+      const ingEl = $('ingest-version');
+      if(ingEl) ingEl.textContent = 'INGESTÃO v' + health.version;
+    }
+  }catch(_){}
+  try{
     const res = await api('/api/v1/images');
     images = res.data || [];
     render();

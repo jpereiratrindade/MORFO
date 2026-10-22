@@ -20,7 +20,7 @@ if(POLICY CMP0167)
   cmake_policy(SET CMP0167 NEW)
 endif()
 
-project(morfo VERSION 0.1.0 LANGUAGES CXX)
+project(morfo VERSION 0.2.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -58,8 +58,18 @@ target_include_directories(morfo_regional_refinement PUBLIC ${CMAKE_SOURCE_DIR}/
 target_link_libraries(morfo_regional_refinement PUBLIC morfo_roots_exp003)
 target_compile_options(morfo_regional_refinement PRIVATE -Wall -Wextra -Wpedantic)
 
-add_executable(morfo-server src/main.cpp src/database.cpp src/auth_smtp.cpp src/analysis.cpp src/tiles.cpp src/learning.cpp src/morfo_profiles.cpp)
-target_link_libraries(morfo-server PRIVATE morfo_roots_exp003 morfo_root_metrics morfo_regional_refinement morfo_pre)
+add_library(morfo_profiles STATIC src/morfo_profiles.cpp)
+target_include_directories(morfo_profiles PUBLIC ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/profiles/roots/exp003/include)
+target_link_libraries(morfo_profiles PUBLIC morfo_roots_exp003 SQLite3::SQLite3)
+target_compile_options(morfo_profiles PRIVATE -Wall -Wextra -Wpedantic)
+
+add_library(morfo_service STATIC src/morfo_service.cpp)
+target_include_directories(morfo_service PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(morfo_service PUBLIC morfo_profiles SQLite3::SQLite3)
+target_compile_options(morfo_service PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(morfo-server src/main.cpp src/database.cpp src/auth_smtp.cpp src/analysis.cpp src/tiles.cpp src/learning.cpp)
+target_link_libraries(morfo-server PRIVATE morfo_roots_exp003 morfo_root_metrics morfo_regional_refinement morfo_pre morfo_profiles morfo_service)
 target_include_directories(morfo-server PRIVATE ${CMAKE_SOURCE_DIR}/src ${BOOST_INCLUDE_DIR})
 target_link_libraries(morfo-server PRIVATE Threads::Threads OpenSSL::Crypto SQLite3::SQLite3 PNG::PNG JPEG::JPEG TIFF::TIFF)
 target_compile_definitions(morfo-server PRIVATE BOOST_ERROR_CODE_HEADER_ONLY BOOST_SYSTEM_NO_DEPRECATED)
@@ -118,6 +128,11 @@ if(BUILD_TESTING)
  target_link_libraries(morfo-regional-refinement-tests PRIVATE morfo_regional_refinement)
  target_compile_options(morfo-regional-refinement-tests PRIVATE -UNDEBUG -Wall -Wextra -Wpedantic)
  add_test(NAME morfo.regional-refinement COMMAND morfo-regional-refinement-tests)
+
+ add_executable(morfo-service-tests tests/test_morfo_service.cpp)
+ target_link_libraries(morfo-service-tests PRIVATE morfo_service morfo_profiles SQLite3::SQLite3)
+ target_compile_options(morfo-service-tests PRIVATE -UNDEBUG -Wall -Wextra -Wpedantic)
+ add_test(NAME morfo.services COMMAND morfo-service-tests)
 
  # A imagem cientifica real e privada. Nao deve entrar no Git publico.
  if(EXISTS "${CMAKE_SOURCE_DIR}/tests/fixtures/private/monolito_rgb.png" AND

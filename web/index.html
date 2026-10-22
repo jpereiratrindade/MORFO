@@ -27,7 +27,7 @@
    </nav>
    <div class="sidebar-bottom">
     <div class="side-note"><small>PRINCÍPIO DE DESENVOLVIMENTO</small><strong>Sempre pronto.<br>Sempre incompleto.</strong><p>Um sistema que preserva o que observa e explicita o que ainda não sabe.</p></div>
-    <div class="connection"><span class="connection-dot"></span><span>Acesso local</span><span>v0.2.0</span></div>
+    <div class="connection"><span class="connection-dot"></span><span>Acesso local</span><span id="connection-version">v0.2.0</span></div>
    </div>
   </aside>
   <div class="mobile-scrim" id="mobile-scrim"></div>
@@ -54,7 +54,7 @@
       </section>
     </section>
     <section class="view hidden" id="view-recebimento" aria-labelledby="receive-title">
-      <div class="pageintro"><div><span class="section-kicker">ENTRADA DE DADOS</span><h1 id="receive-title">Recebimento de imagens</h1><p>Os originais são preservados. A preparação gera arquivos derivados com proveniência identificável.</p></div><span class="version-pill">INGESTÃO v0.2.0</span></div>
+      <div class="pageintro"><div><span class="section-kicker">ENTRADA DE DADOS</span><h1 id="receive-title">Recebimento de imagens</h1><p>Os originais são preservados. A preparação gera arquivos derivados com proveniência identificável.</p></div><span class="version-pill" id="ingest-version">INGESTÃO v0.2.0</span></div>
       <div class="receivelayout"><form id="upload-form" class="panel uploadpanel"><div class="section-heading"><div><h2>Enviar arquivos</h2><p>Selecione imagens PNG, JPEG ou TIFF para o acervo local.</p></div></div>
         <div class="operator-badge" id="operator-badge"><span class="op-label">Operador responsável:</span> <strong id="operator-email">Carregando...</strong> <small>· Vinculado ao registro de proveniência</small></div>
         <label class="dropzone" id="dropzone" for="file-input"><span class="uploadsymbol" aria-hidden="true">⇧</span><strong>Arraste imagens para esta área</strong><span>ou clique para selecionar arquivos</span><small>PNG, JPEG, TIFF e BigTIFF compatíveis · envio progressivo · limite operacional de 8 GiB</small></label><input class="visually-hidden-file" id="file-input" type="file" accept="image/png,image/jpeg,image/tiff,.png,.jpg,.jpeg,.tif,.tiff" multiple>

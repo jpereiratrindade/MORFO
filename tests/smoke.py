@@ -435,6 +435,20 @@ def main():
             # MORFO thematic profile: backend EXP-003 runs, records, isolates derivatives.
             status, body, _ = req(base+'/api/v1/profiles')
             assert status == 200 and b'roots-exp003' in body and b'pre001-0.1.0-experimental' in body and b'UNNAMED_MORPHOTYPES' in body
+
+            # MORFO Model Context Protocol (MCP 2026) Streamable HTTP endpoint
+            status, mcp_get, _ = req(base+'/mcp')
+            assert status == 200 and b'Model Context Protocol 2026' in mcp_get, (status, mcp_get)
+            mcp_init = json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}}).encode()
+            status, mcp_init_res, _ = req(base+'/mcp', 'POST', mcp_init, {'Content-Type': 'application/json', **auth_headers})
+            assert status == 200 and b'morfo-mcp-server' in mcp_init_res, (status, mcp_init_res)
+            mcp_tools = json.dumps({'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list'}).encode()
+            status, mcp_tools_res, _ = req(base+'/mcp', 'POST', mcp_tools, {'Content-Type': 'application/json', **auth_headers})
+            assert status == 200 and b'morfo_list_profiles' in mcp_tools_res and b'morfo_get_analysis' in mcp_tools_res, (status, mcp_tools_res)
+            mcp_call = json.dumps({'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call', 'params': {'name': 'morfo_list_profiles', 'arguments': {}}}).encode()
+            status, mcp_call_res, _ = req(base+'/mcp', 'POST', mcp_call, {'Content-Type': 'application/json', **auth_headers})
+            assert status == 200 and b'roots-exp003' in mcp_call_res, (status, mcp_call_res)
+
             status, body, _ = req(base+f'/api/v1/images/{analysis_image_id}/profiles/discovery','POST',b'',auth_headers)
             discovery=json.loads(body)['data']
             discovery_id=discovery['id']; assert status==201 and len(discovery_id)==24 and discovery['semantics']=='UNNAMED_MORPHOTYPES' and len(discovery['morphotypes'])==3,(status,body)

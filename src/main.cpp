@@ -28,6 +28,7 @@
 #include "tiles.hpp"
 #include "learning.hpp"
 #include "morfo_profiles.hpp"
+#include "morfo_service.hpp"
 #include "morfo_root_metrics.hpp"
 #include "morfo_pre.hpp"
 #include "regional_refinement.hpp"
@@ -71,6 +72,7 @@ constexpr std::size_t MAX_CONTROL_BODY=1024*1024;
 constexpr std::uint64_t MAX_PIXELS=12'000'000;
 constexpr int THUMB_MAX=1280;
 constexpr int TILE_SIZE=256;
+constexpr const char* MORFO_VERSION="0.2.0";
 constexpr const char* PIPELINE="rizoma-exp004-progressive-0.4.0";
 struct Failure : std::runtime_error {using std::runtime_error::runtime_error;};
 struct Raster {int w=0,h=0;std::vector<unsigned char> rgba;};
@@ -992,7 +994,7 @@ static std::string add_review(const App& app,const std::string& region_id,const 
 }
 using Response=http::response<http::string_body>;
 static Response respond(http::status s,unsigned version,std::string body,std::string mime="application/json; charset=utf-8"){
- Response r{s,version};r.set(http::field::server,"MORFO/0.1.0");r.set(http::field::content_type,mime);r.set(http::field::cache_control,"no-store");r.set("X-Content-Type-Options","nosniff");r.set("X-Frame-Options","DENY");r.set("Referrer-Policy","no-referrer");r.set("Content-Security-Policy","default-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");r.keep_alive(false);r.body()=std::move(body);r.prepare_payload();return r;}
+ Response r{s,version};r.set(http::field::server,std::string("MORFO/")+MORFO_VERSION);r.set(http::field::content_type,mime);r.set(http::field::cache_control,"no-store");r.set("X-Content-Type-Options","nosniff");r.set("X-Frame-Options","DENY");r.set("Referrer-Policy","no-referrer");r.set("Content-Security-Policy","default-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");r.keep_alive(false);r.body()=std::move(body);r.prepare_payload();return r;}
 static Response problem(unsigned ver,http::status s,const std::string& msg){return respond(s,ver,"{\"error\":\""+esc(msg)+"\"}");}
 static bool valid_id(std::string s){return s.size()==24&&std::all_of(s.begin(),s.end(),[](char c){return(c>='a'&&c<='f')||(c>='0'&&c<='9');});}
 
@@ -1360,7 +1362,7 @@ static std::string delete_image_calibration(const App& app,const std::string& ca
 
 static Response handle(const App& app,const http::request<http::string_body>& req){
  unsigned v=req.version();std::string target(req.target());auto p=target.substr(0,target.find('?'));auto args=params(target);
- if(req.method()==http::verb::get&&p=="/api/v1/health")return respond(http::status::ok,v,"{\"status\":\"ok\",\"name\":\"RIZOMA\",\"version\":\"0.2.0\",\"scope\":\"local-image-intake\"}");
+ if(req.method()==http::verb::get&&p=="/api/v1/health")return respond(http::status::ok,v,"{\"status\":\"ok\",\"name\":\"MORFO\",\"version\":\""+std::string(MORFO_VERSION)+"\",\"scope\":\"perception-discovery-core\"}");
 
  // Auth endpoints
  if(req.method()==http::verb::get&&p=="/api/v1/auth/me"){
@@ -1519,8 +1521,23 @@ static Response handle(const App& app,const http::request<http::string_body>& re
   return problem(v,http::status::not_found,"Rota administrativa não encontrada.");
  }
 
- if(req.method()==http::verb::get&&p=="/api/v1/profiles")return respond(http::status::ok,v,morfo::profiles::registry_json());
+ if(req.method()==http::verb::get&&p=="/api/v1/profiles")return respond(http::status::ok,v,morfo::service::ProfileService::catalog_json());
  if(req.method()==http::verb::get&&p=="/api/v1/refinement-parameters")return respond(http::status::ok,v,refinement_parameters_contract());
+
+ if(p=="/mcp"||p=="/api/v1/mcp"){
+  auto user=authenticate(app,req);
+  std::string user_id=user?user->id:"";
+  if(req.method()==http::verb::post){
+   if(req[http::field::content_type].find("application/json")!=0)return problem(v,http::status::unsupported_media_type,"Use application/json");
+   Db db(app.root/"morfo.sqlite3");
+   morfo::service::McpDispatcher dispatcher(db.p);
+   return respond(http::status::ok,v,dispatcher.dispatch(req.body(),user_id));
+  }
+  if(req.method()==http::verb::get){
+   return respond(http::status::ok,v,R"({"status":"ok","transport":"Streamable HTTP","protocol":"Model Context Protocol 2026","endpoint":"/mcp"})");
+  }
+  return problem(v,http::status::method_not_allowed,"Method not allowed");
+ }
 
  // Protected routes
  if(p=="/api/v1/images"||p=="/api/v1/root-metrics"||p=="/api/v1/evaluation/overview"||p=="/api/v1/evaluation/protocols"||p=="/api/v1/evaluation/datasets"||p=="/api/v1/parameter-presets"||p=="/api/v1/export/manifest.csv"||p.starts_with("/api/v1/evaluation/protocols/")||p.starts_with("/api/v1/evaluation/datasets/")||p.starts_with("/api/v1/images/")||p.starts_with("/api/v1/refinements/")||p.starts_with("/api/v1/parameter-presets/")||p.starts_with("/api/v1/analysis-regions/")||p.starts_with("/api/v1/analysis-runs/")||p.starts_with("/api/v1/root-metrics/")||p.starts_with("/api/v1/calibrations/")){
@@ -1843,6 +1860,6 @@ int main(int argc,char** argv){try{
  boost::system::error_code ec;auto addr=asio::ip::make_address(app.host,ec);
  if(ec)throw Failure("Invalid IP address for --host: "+app.host);
  tcp::acceptor acceptor(io,{addr,app.port});
- std::cout<<"MORFO v0.1.0 — http://"<<app.host<<":"<<app.port<<(app.host=="127.0.0.1"?" (loopback only)":app.host=="0.0.0.0"?" (all interfaces / LAN)":" (local network)")<<"\n"<<"Data dir: "<<fs::absolute(app.root)<<"\n"<<std::flush;
+ std::cout<<"MORFO v"<<MORFO_VERSION<<" — http://"<<app.host<<":"<<app.port<<(app.host=="127.0.0.1"?" (loopback only)":app.host=="0.0.0.0"?" (all interfaces / LAN)":" (local network)")<<"\n"<<"Data dir: "<<fs::absolute(app.root)<<"\n"<<std::flush;
  for(;;){tcp::socket s(io);acceptor.accept(s);if(app.active.load()>=4){s.close();continue;}++app.active;std::thread(session,std::move(s),std::ref(app)).detach();}
  }catch(const std::exception& e){std::cerr<<"MORFO fatal: "<<e.what()<<"\n";return 1;}}
