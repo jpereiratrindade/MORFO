@@ -159,7 +159,7 @@
 
   async function loadRefinementMetrics(refinementId){
     let response=await json(refinementMetricsPath(refinementId));
-    if(!response.data)response=await json(refinementMetricsPath(refinementId),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scale_x:null,scale_y:null,diameter_bins:[],origin:'',method:'',date:new Date().toISOString(),version:'auto-refinement-001c',responsible:''})});
+    if(!response.data&&!response.deleted)response=await json(refinementMetricsPath(refinementId),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scale_x:null,scale_y:null,diameter_bins:[],origin:'',method:'',date:new Date().toISOString(),version:'auto-refinement-001c',responsible:''})});
     if(refinementId!==state.refinementId)return;
     state.metrics=response.data;await loadMetricLists();renderPanel();
   }
@@ -226,7 +226,7 @@
       $('morfo-evaluate-run').disabled=false;
       let metricResponse=await json(metricsPath(imageId,id));
       if(epoch!==state.generation||imageId!==state.imageId)return;
-      if(!metricResponse.data){
+      if(!metricResponse.data&&!metricResponse.deleted){
         message('Primeira abertura: calculando morfometria determinística sem escala física...');
         metricResponse=await json(metricsPath(imageId,id),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scale_x:null,scale_y:null,diameter_bins:[],origin:'',method:'',date:new Date().toISOString(),version:'auto-001c',responsible:''})});
         if(epoch!==state.generation||imageId!==state.imageId)return;

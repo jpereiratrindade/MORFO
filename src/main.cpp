@@ -1253,12 +1253,23 @@ static std::string morfo_start_metrics(const App& app,const std::string& image_i
 static std::string morfo_latest_metrics(const App& app,const std::string& image_id,const std::string& profile_run_id,const std::string& user_id){
  Db db(app.root/"morfo.sqlite3");Stmt st(db.p,"SELECT result_json FROM morfo_root_metric_runs WHERE profile_run_id=? AND refinement_id IS NULL AND image_id=? AND user_id=? AND deleted_at IS NULL ORDER BY created_at DESC,rowid DESC LIMIT 1");
  st.bind(1,profile_run_id);st.bind(2,image_id);st.bind(3,user_id);
- if(sqlite3_step(st.p)!=SQLITE_ROW)return "{\"data\":null}";
- return col(st.p,0);
+ if(sqlite3_step(st.p)==SQLITE_ROW)return col(st.p,0);
+ Stmt was_del(db.p,"SELECT 1 FROM morfo_root_metric_runs WHERE profile_run_id=? AND refinement_id IS NULL AND image_id=? AND user_id=? AND deleted_at IS NOT NULL LIMIT 1");
+ was_del.bind(1,profile_run_id);was_del.bind(2,image_id);was_del.bind(3,user_id);
+ if(sqlite3_step(was_del.p)==SQLITE_ROW)return "{\"data\":null,\"deleted\":true}";
+ return "{\"data\":null,\"deleted\":false}";
 }
-static std::string refinement_latest_metrics(const App& app,const std::string& refinement_id,const std::string& user_id){Db db(app.root/"morfo.sqlite3");Stmt st(db.p,"SELECT result_json FROM morfo_root_metric_runs WHERE refinement_id=? AND user_id=? AND deleted_at IS NULL ORDER BY created_at DESC,rowid DESC LIMIT 1");st.bind(1,refinement_id);st.bind(2,user_id);if(sqlite3_step(st.p)!=SQLITE_ROW)return "{\"data\":null}";return col(st.p,0);}
+static std::string refinement_latest_metrics(const App& app,const std::string& refinement_id,const std::string& user_id){
+ Db db(app.root/"morfo.sqlite3");Stmt st(db.p,"SELECT result_json FROM morfo_root_metric_runs WHERE refinement_id=? AND user_id=? AND deleted_at IS NULL ORDER BY created_at DESC,rowid DESC LIMIT 1");
+ st.bind(1,refinement_id);st.bind(2,user_id);
+ if(sqlite3_step(st.p)==SQLITE_ROW)return col(st.p,0);
+ Stmt was_del(db.p,"SELECT 1 FROM morfo_root_metric_runs WHERE refinement_id=? AND user_id=? AND deleted_at IS NOT NULL LIMIT 1");
+ was_del.bind(1,refinement_id);was_del.bind(2,user_id);
+ if(sqlite3_step(was_del.p)==SQLITE_ROW)return "{\"data\":null,\"deleted\":true}";
+ return "{\"data\":null,\"deleted\":false}";
+}
 
-static std::string morfo_metrics_csv(const App& app,const std::string& image_id,const std::string& profile_run_id,const std::string& user_id){
+static std::string morfo_metric_run_csv(const App& app,const std::string& metric_id,const std::string& user_id){
  Db db(app.root/"morfo.sqlite3");
  Stmt run(db.p,R"SQL(SELECT id,metrics_version,mask_sha256,created_at,
   json_extract(result_json,'$.data.scientific_status'),json_extract(result_json,'$.data.nature'),
@@ -1271,13 +1282,14 @@ static std::string morfo_metrics_csv(const App& app,const std::string& image_id,
   json_extract(result_json,'$.data.projected_length_mm'),json_extract(result_json,'$.data.projected_length_cm'),
   json_extract(result_json,'$.data.mean_diameter'),json_extract(result_json,'$.data.min_diameter'),
   json_extract(result_json,'$.data.max_diameter'),json_extract(result_json,'$.data.measurable_diameter_length_fraction'),
-  json_extract(result_json,'$.data.diameter_unit')
- FROM morfo_root_metric_runs WHERE profile_run_id=? AND refinement_id IS NULL AND image_id=? AND user_id=? AND deleted_at IS NULL ORDER BY created_at DESC,rowid DESC LIMIT 1)SQL");
- run.bind(1,profile_run_id);run.bind(2,image_id);run.bind(3,user_id);if(sqlite3_step(run.p)!=SQLITE_ROW)throw Failure("Root metric run not found");
+  json_extract(result_json,'$.data.diameter_unit'),image_id,profile_run_id,COALESCE(refinement_id,'')
+ FROM morfo_root_metric_runs WHERE id=? AND user_id=? AND deleted_at IS NULL)SQL");
+ run.bind(1,metric_id);run.bind(2,user_id);if(sqlite3_step(run.p)!=SQLITE_ROW)throw Failure("Root metric run not found");
  auto value=[&](int column){return sqlite3_column_type(run.p,column)==SQLITE_NULL?std::string(""):col(run.p,column);};
  std::ostringstream out;out<<"# MORFO-ROOT-METRICS-001C\r\n"
-  <<"# metric_run_id,"<<csv_cell(col(run.p,0))<<"\r\n# profile_run_id,"<<csv_cell(profile_run_id)
-  <<"\r\n# image_id,"<<csv_cell(image_id)<<"\r\n# metrics_version,"<<csv_cell(col(run.p,1))
+  <<"# metric_run_id,"<<csv_cell(col(run.p,0))<<"\r\n# profile_run_id,"<<csv_cell(col(run.p,26))
+  <<"\r\n# refinement_id,"<<csv_cell(col(run.p,27))
+  <<"\r\n# image_id,"<<csv_cell(col(run.p,25))<<"\r\n# metrics_version,"<<csv_cell(col(run.p,1))
   <<"\r\n# mask_sha256,"<<csv_cell(col(run.p,2))<<"\r\n# created_at,"<<csv_cell(col(run.p,3))
   <<"\r\n# scientific_status,"<<csv_cell(value(4))<<"\r\n# nature,"<<csv_cell(value(5))
   <<"\r\n# candidate_pixels,"<<value(6)<<"\r\n# valid_pixels,"<<value(7)<<"\r\n# matrix_pixels,"<<value(8)
@@ -1293,6 +1305,13 @@ static std::string morfo_metrics_csv(const App& app,const std::string& image_id,
  while(sqlite3_step(components.p)==SQLITE_ROW){for(int column=0;column<17;++column){if(column)out<<',';if(sqlite3_column_type(components.p,column)!=SQLITE_NULL)out<<col(components.p,column);}out<<"\r\n";}
  out<<"\r\ndiameter_lower_bound,diameter_upper_bound,length,percent\r\n";Stmt classes(db.p,"SELECT json_extract(value,'$.lower_bound'),json_extract(value,'$.upper_bound'),json_extract(value,'$.length'),json_extract(value,'$.percent') FROM json_each((SELECT result_json FROM morfo_root_metric_runs WHERE id=?),'$.data.diameter_classes')");classes.bind(1,col(run.p,0));while(sqlite3_step(classes.p)==SQLITE_ROW){for(int column=0;column<4;++column){if(column)out<<',';if(sqlite3_column_type(classes.p,column)!=SQLITE_NULL)out<<col(classes.p,column);}out<<"\r\n";}
  return out.str();
+}
+
+static std::string morfo_metrics_csv(const App& app,const std::string& image_id,const std::string& profile_run_id,const std::string& user_id){
+ Db db(app.root/"morfo.sqlite3");
+ Stmt run(db.p,"SELECT id FROM morfo_root_metric_runs WHERE profile_run_id=? AND refinement_id IS NULL AND image_id=? AND user_id=? AND deleted_at IS NULL ORDER BY created_at DESC,rowid DESC LIMIT 1");
+ run.bind(1,profile_run_id);run.bind(2,image_id);run.bind(3,user_id);if(sqlite3_step(run.p)!=SQLITE_ROW)throw Failure("Root metric run not found");
+ return morfo_metric_run_csv(app,col(run.p,0),user_id);
 }
 
 static std::string morfo_metric_runs_json(const App& app,const std::string& image_id,const std::string& profile_run_id,const std::string& user_id){
@@ -1321,20 +1340,22 @@ static std::string all_morfo_metric_runs_json(const App& app,const std::string& 
  json_extract(m.result_json,'$.data.projected_length_mm'),json_extract(m.result_json,'$.data.projected_length_px'),
  json_extract(m.result_json,'$.data.mean_diameter'),json_extract(m.result_json,'$.data.diameter_unit'),
  json_extract(m.result_json,'$.data.apparent_tips'),json_extract(m.result_json,'$.data.apparent_branches'),
- json_extract(m.result_json,'$.data.occupancy_percent')
+ json_extract(m.result_json,'$.data.occupancy_percent'),
+ m.refinement_id
  FROM morfo_root_metric_runs m JOIN images i ON i.id=m.image_id
  WHERE m.user_id=? AND m.deleted_at IS NULL AND i.deleted_at IS NULL ORDER BY m.created_at DESC,m.rowid DESC)SQL");
  st.bind(1,user_id);std::ostringstream out;out<<"{\"data\":[";bool first=true;auto nullable=[&](int column){return sqlite3_column_type(st.p,column)==SQLITE_NULL?std::string("null"):col(st.p,column);};
- while(sqlite3_step(st.p)==SQLITE_ROW){if(!first)out<<',';first=false;out<<"{\"id\":"<<q(col(st.p,0))<<",\"profile_run_id\":"<<q(col(st.p,1))<<",\"image_id\":"<<q(col(st.p,2))<<",\"filename\":"<<q(col(st.p,3))<<",\"sample_id\":"<<q(col(st.p,4))<<",\"metrics_version\":"<<q(col(st.p,5))<<",\"status\":"<<q(col(st.p,6))<<",\"notes\":"<<q(col(st.p,7))<<",\"created_at\":"<<q(col(st.p,8))<<",\"projected_area_mm2\":"<<nullable(9)<<",\"candidate_pixels\":"<<sqlite3_column_int64(st.p,10)<<",\"projected_length_mm\":"<<nullable(11)<<",\"projected_length_px\":"<<nullable(12)<<",\"mean_diameter\":"<<nullable(13)<<",\"diameter_unit\":"<<q(col(st.p,14))<<",\"apparent_tips\":"<<nullable(15)<<",\"apparent_branches\":"<<nullable(16)<<",\"occupancy_percent\":"<<nullable(17)<<'}';}
+ while(sqlite3_step(st.p)==SQLITE_ROW){if(!first)out<<',';first=false;out<<"{\"id\":"<<q(col(st.p,0))<<",\"profile_run_id\":"<<q(col(st.p,1))<<",\"image_id\":"<<q(col(st.p,2))<<",\"filename\":"<<q(col(st.p,3))<<",\"sample_id\":"<<q(col(st.p,4))<<",\"metrics_version\":"<<q(col(st.p,5))<<",\"status\":"<<q(col(st.p,6))<<",\"notes\":"<<q(col(st.p,7))<<",\"created_at\":"<<q(col(st.p,8))<<",\"projected_area_mm2\":"<<nullable(9)<<",\"candidate_pixels\":"<<sqlite3_column_int64(st.p,10)<<",\"projected_length_mm\":"<<nullable(11)<<",\"projected_length_px\":"<<nullable(12)<<",\"mean_diameter\":"<<nullable(13)<<",\"diameter_unit\":"<<q(col(st.p,14))<<",\"apparent_tips\":"<<nullable(15)<<",\"apparent_branches\":"<<nullable(16)<<",\"occupancy_percent\":"<<nullable(17)<<",\"refinement_id\":"<<(sqlite3_column_type(st.p,18)==SQLITE_NULL?"null":q(col(st.p,18)))<<'}';}
  return out<<"]}",out.str();
 }
 
 static std::string morfo_metric_run_json(const App& app,const std::string& metric_id,const std::string& user_id){
- Db db(app.root/"morfo.sqlite3");Stmt st(db.p,"SELECT result_json,status,notes FROM morfo_root_metric_runs WHERE id=? AND user_id=? AND deleted_at IS NULL");st.bind(1,metric_id);st.bind(2,user_id);
+ Db db(app.root/"morfo.sqlite3");Stmt st(db.p,"SELECT result_json,status,notes,refinement_id FROM morfo_root_metric_runs WHERE id=? AND user_id=? AND deleted_at IS NULL");st.bind(1,metric_id);st.bind(2,user_id);
  if(sqlite3_step(st.p)!=SQLITE_ROW)throw Failure("Root metric run not found");
  std::string result=col(st.p,0);const auto end=result.rfind("}}");
  if(end==std::string::npos)throw Failure("Invalid persisted metric result");
- result.insert(end,",\"record_status\":"+q(col(st.p,1))+",\"notes\":"+q(col(st.p,2)));
+ const std::string ref_json = sqlite3_column_type(st.p,3)==SQLITE_NULL ? "null" : q(col(st.p,3));
+ result.insert(end,",\"record_status\":"+q(col(st.p,1))+",\"notes\":"+q(col(st.p,2))+",\"refinement_id\":"+ref_json);
  return result;
 }
 
@@ -1579,8 +1600,30 @@ static Response handle(const App& app,const http::request<http::string_body>& re
    }catch(const std::exception& e){const std::string message=e.what();return problem(v,message=="Refinement session not found"?http::status::not_found:http::status::unprocessable_entity,message);}
   }
   if(p.starts_with("/api/v1/root-metrics/")){
-   const std::string metric_id=p.substr(std::string("/api/v1/root-metrics/").size());if(!valid_id(metric_id))return problem(v,http::status::bad_request,"Invalid metric identifier");
-   try{if(req.method()==http::verb::get)return respond(http::status::ok,v,morfo_metric_run_json(app,metric_id,user->id));if(req.method()==http::verb::patch){if(req[http::field::content_type].find("application/json")!=0)return problem(v,http::status::unsupported_media_type,"Use application/json");return respond(http::status::ok,v,update_morfo_metric_run(app,metric_id,user->id,req.body()));}if(req.method()==http::verb::delete_)return respond(http::status::ok,v,delete_morfo_metric_run(app,metric_id,user->id));}
+   std::string metric_id=p.substr(std::string("/api/v1/root-metrics/").size());
+   bool csv=false;
+   if(metric_id.ends_with("/export.csv")){csv=true;metric_id=metric_id.substr(0,metric_id.size()-std::string("/export.csv").size());}
+   else if(metric_id.ends_with(".csv")){csv=true;metric_id=metric_id.substr(0,metric_id.size()-4);}
+   bool json_dl=false;
+   if(metric_id.ends_with("/export.json")){json_dl=true;metric_id=metric_id.substr(0,metric_id.size()-std::string("/export.json").size());}
+   if(!valid_id(metric_id))return problem(v,http::status::bad_request,"Invalid metric identifier");
+   try{
+    if(req.method()==http::verb::get){
+     if(csv){
+      auto r=respond(http::status::ok,v,morfo_metric_run_csv(app,metric_id,user->id),"text/csv; charset=utf-8");
+      r.set(http::field::content_disposition,"attachment; filename=\"morfo-morfometria-"+metric_id+".csv\"");
+      return r;
+     }
+     if(json_dl){
+      auto r=respond(http::status::ok,v,morfo_metric_run_json(app,metric_id,user->id),"application/json; charset=utf-8");
+      r.set(http::field::content_disposition,"attachment; filename=\"morfo-morfometria-"+metric_id+".json\"");
+      return r;
+     }
+     return respond(http::status::ok,v,morfo_metric_run_json(app,metric_id,user->id));
+    }
+    if(req.method()==http::verb::patch){if(req[http::field::content_type].find("application/json")!=0)return problem(v,http::status::unsupported_media_type,"Use application/json");return respond(http::status::ok,v,update_morfo_metric_run(app,metric_id,user->id,req.body()));}
+    if(req.method()==http::verb::delete_)return respond(http::status::ok,v,delete_morfo_metric_run(app,metric_id,user->id));
+   }
    catch(const std::exception& e){return problem(v,std::string(e.what())=="Root metric run not found"?http::status::not_found:http::status::unprocessable_entity,e.what());}
   }
   if(p.starts_with("/api/v1/calibrations/")){

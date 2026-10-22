@@ -359,11 +359,13 @@ async function openRootMetricDetail(metricId){
     const roiTotal=Number(metric.roi_pixels)||0,coverageParts=[{label:'Candidatos',value:Number(metric.candidate_pixels)||0,className:'candidate'},{label:'Matriz',value:Number(metric.matrix_pixels)||0,className:'matrix'},{label:'Excluídos',value:Number(metric.excluded_or_abstained_pixels)||0,className:'excluded'}];
     const topologyParts=[{label:'Pontas',value:metric.apparent_tips},{label:'Ramificações',value:metric.apparent_branches},{label:'Truncadas',value:metric.truncated_tips}],topologyMax=Math.max(1,...topologyParts.map(item=>Number(item.value)||0));
     const componentChart=components.slice().sort((a,b)=>(Number(b.projected_length_mm??b.projected_length_px)||0)-(Number(a.projected_length_mm??a.projected_length_px)||0)).slice(0,12),componentMax=Math.max(1,...componentChart.map(item=>Number(item.projected_length_mm??item.projected_length_px)||0));
-    const imageWidth=Number(metric.width)||0,imageHeight=Number(metric.height)||0,labelSize=Math.max(11,imageWidth/70),overlayPath=`/api/v1/images/${encodeURIComponent(record.image_id||'')}/profiles/roots-exp003/${encodeURIComponent(record.profile_run_id||metric.profile_run_id||'')}/overlay`;
+    const isRefinement=Boolean(record.refinement_id||metric.refinement_id);
+    const refinementId=record.refinement_id||metric.refinement_id;
+    const overlayPath=isRefinement?`/api/v1/refinements/${encodeURIComponent(refinementId)}/overlay`:`/api/v1/images/${encodeURIComponent(record.image_id||'')}/profiles/roots-exp003/${encodeURIComponent(record.profile_run_id||metric.profile_run_id||'')}/overlay`;
     const originalPath=`/api/v1/images/${encodeURIComponent(record.image_id||'')}/original-view`;
     detail.innerHTML=`
-      <div class="root-detail-head"><button class="button outline" id="root-detail-back" type="button">← Voltar às análises</button><div class="root-detail-actions"><a class="button outline" href="/api/v1/images/${encodeURIComponent(record.image_id||'')}/profiles/roots-exp003/${encodeURIComponent(record.profile_run_id||metric.profile_run_id||'')}/metrics/export.csv" download>↓ CSV</a><a class="button outline" href="/api/v1/images/${encodeURIComponent(record.image_id||'')}/profiles/roots-exp003/${encodeURIComponent(record.profile_run_id||metric.profile_run_id||'')}/metrics/export.json" download>↓ JSON</a></div></div>
-      <header class="root-detail-title"><div><span class="section-kicker">${h(record.sample_id||'SEM AMOSTRA')}</span><h2>${h(record.filename||'Análise radicular')}</h2><p>Registro ${h(metric.id||metricId)} · ${h(metric.created_at||record.created_at||'')}</p></div><span class="metric-status ${h((metric.record_status||record.status||'').toLowerCase())}">${h(rootMetricStatusLabel(metric.record_status||record.status||''))}</span></header>
+      <div class="root-detail-head"><button class="button outline" id="root-detail-back" type="button">← Voltar às análises</button><div class="root-detail-actions"><a class="button outline" href="/api/v1/root-metrics/${encodeURIComponent(metricId)}/export.csv" download>↓ CSV</a><a class="button outline" href="/api/v1/root-metrics/${encodeURIComponent(metricId)}/export.json" download>↓ JSON</a></div></div>
+      <header class="root-detail-title"><div><div class="analysis-card-kicker"><span class="section-kicker">${h(record.sample_id||'SEM AMOSTRA')}</span><span class="analysis-origin-badge ${isRefinement?'tag-refinement':'tag-exp003'}">${isRefinement?'Refinamento':'EXP-003 Original'}</span></div><h2>${h(record.filename||'Análise radicular')}</h2><p>Registro ${h(metric.id||metricId)} · ${h(metric.created_at||record.created_at||'')}${isRefinement?` · Sessão de Refinamento: ${h(refinementId)}`:''}</p></div><span class="metric-status ${h((metric.record_status||record.status||'').toLowerCase())}">${h(rootMetricStatusLabel(metric.record_status||record.status||''))}</span></header>
       <section class="root-detail-section"><h3>Resumo morfométrico</h3><dl class="root-detail-metrics">
         ${rootMetricCell('Área candidata',metric.projected_area_mm2==null?metricValue(metric.candidate_pixels,'px²'):metricValue(metric.projected_area_mm2,'mm²'))}
         ${rootMetricCell('Comprimento',metric.projected_length_mm==null?metricValue(metric.projected_length_px,'px'):metricValue(metric.projected_length_mm,'mm'))}
@@ -397,7 +399,7 @@ async function openRootMetricDetail(metricId){
       </div></section>
       ${classes.length?`<section class="root-detail-section"><h3>Distribuição de diâmetros</h3><div class="root-detail-histogram">${classes.map(item=>`<div><span>${item.upper_bound==null?`≥ ${metricValue(item.lower_bound,unit)}`:`${metricValue(item.lower_bound,unit)} – ${metricValue(item.upper_bound,unit)}`}</span><i style="--diameter-percent:${Math.max(0,Math.min(100,Number(item.percent)||0))}%"></i><b>${metricValue(item.percent,'%')}</b></div>`).join('')}</div></section>`:''}
       <section class="root-detail-section"><h3>Componentes detectados</h3>${components.length?`<div class="root-detail-table"><table><thead><tr><th>ID</th><th>Área</th><th>Comprimento</th><th>Esqueleto</th><th>Arestas</th><th>Pontas</th><th>Ramificações</th><th>Centroide (x, y)</th><th>Caixa delimitadora (mín. → máx.)</th><th>Contato com limites</th></tr></thead><tbody>${components.map(item=>{const box=item.bounding_box||{};return `<tr><td>${h(item.id??item.component_id??'—')}</td><td>${item.area_mm2==null?metricValue(item.area_px,'px²'):metricValue(item.area_mm2,'mm²')}</td><td>${item.projected_length_mm==null?metricValue(item.projected_length_px,'px'):metricValue(item.projected_length_mm,'mm')}</td><td>${metricValue(item.skeleton_pixels,'px')}</td><td>${metricValue(item.graph_edges,'')}</td><td>${metricValue(item.apparent_tips,'')}</td><td>${metricValue(item.apparent_branches,'')}</td><td>${item.centroid_x_px==null?'—':`${metricValue(item.centroid_x_px,'')}, ${metricValue(item.centroid_y_px,'')}`}</td><td>${box.min_x==null?'—':`(${number.format(box.min_x)}, ${number.format(box.min_y)}) → (${number.format(box.max_x)}, ${number.format(box.max_y)})`}</td><td>${[item.touches_image_boundary&&'Imagem',item.touches_roi_boundary&&'ROI',item.touches_abstained_area&&'Abstenção'].filter(Boolean).join(', ')||'Nenhum'}</td></tr>`;}).join('')}</tbody></table></div>`:'<p class="root-detail-muted">Nenhum componente registrado.</p>'}</section>
-      <div class="root-detail-columns"><section class="root-detail-section"><h3>Escala e proveniência</h3><dl class="root-detail-provenance"><dt>Escala X</dt><dd>${metricValue(metric.scale_x_mm_per_pixel,'mm/px')}</dd><dt>Escala Y</dt><dd>${metricValue(metric.scale_y_mm_per_pixel,'mm/px')}</dd><dt>Versão da métrica</dt><dd>${h(metric.metrics_version||record.metrics_version||'—')}</dd><dt>Execução do perfil</dt><dd>${h(metric.profile_run_id||record.profile_run_id||'—')}</dd><dt>Natureza</dt><dd>${h(metric.nature||'—')}</dd><dt>Estado científico</dt><dd>${h(metric.scientific_status||'—')}</dd></dl></section>
+      <div class="root-detail-columns"><section class="root-detail-section"><h3>Escala e proveniência</h3><dl class="root-detail-provenance"><dt>Origem</dt><dd>${isRefinement?`Refinamento Humano (Sessão: ${h(refinementId)})`:'Execução Original EXP-003'}</dd><dt>Escala X</dt><dd>${metricValue(metric.scale_x_mm_per_pixel,'mm/px')}</dd><dt>Escala Y</dt><dd>${metricValue(metric.scale_y_mm_per_pixel,'mm/px')}</dd><dt>Versão da métrica</dt><dd>${h(metric.metrics_version||record.metrics_version||'—')}</dd><dt>Execução do perfil</dt><dd>${h(metric.profile_run_id||record.profile_run_id||'—')}</dd><dt>Natureza</dt><dd>${h(metric.nature||'—')}</dd><dt>Estado científico</dt><dd>${h(metric.scientific_status||'—')}</dd></dl></section>
       <section class="root-detail-section"><h3>Curadoria do registro</h3><form id="root-detail-form" class="root-detail-form"><label>Estado<select id="root-detail-status"><option value="NOT_VALIDATED">Não validado</option><option value="REVIEWED">Revisado</option><option value="ARCHIVED">Arquivado</option></select></label><label>Notas<textarea id="root-detail-notes" maxlength="2000" rows="5" placeholder="Observações da revisão">${h(metric.notes||'')}</textarea></label><div><button class="button primary" type="submit">Salvar alterações</button><button class="button danger" id="root-detail-delete" type="button">Excluir registro</button></div></form></section></div>
       ${record.image_id?`<footer class="root-detail-source"><p>A imagem é mantida como fonte; este registro possui espaço próprio.</p><button class="button outline" id="root-detail-image" type="button">Abrir imagem de origem ↗</button></footer>`:''}`;
     $('root-detail-status').value=metric.record_status||record.status||'NOT_VALIDATED';
@@ -412,19 +414,47 @@ async function openRootMetricDetail(metricId){
 }
 function renderRootMetricRecords(){
   const target=$('root-analysis-list');if(!target)return;const search=$('root-analysis-search').value.trim().toLowerCase(),filter=$('root-analysis-filter').value;
-  const records=rootMetricRecords.filter(record=>(filter==='all'||record.status===filter)&&(!search||[record.filename,record.sample_id,record.id,record.profile_run_id,record.status].join(' ').toLowerCase().includes(search)));
+  const records=rootMetricRecords.filter(record=>(filter==='all'||record.status===filter)&&(!search||[record.filename,record.sample_id,record.id,record.profile_run_id,record.status,record.refinement_id?'refinamento':'original exp-003'].join(' ').toLowerCase().includes(search)));
   if(!records.length){target.innerHTML=`<div class="empty"><h3>${rootMetricRecords.length?'Nenhuma análise corresponde aos filtros':'Nenhuma análise radicular registrada'}</h3><p>${rootMetricRecords.length?'Altere busca ou estado.':'Execute perfil EXP-003 em uma imagem; morfometria será registrada automaticamente.'}</p></div>`;return;}
-  target.innerHTML=records.map(record=>`<article class="root-analysis-card">
-    <header><div><span class="section-kicker">${h(record.sample_id||'SEM AMOSTRA')}</span><h3>${h(record.filename)}</h3><small>${h(record.created_at)} · ${h(record.id)}</small></div><span class="metric-status ${h(record.status.toLowerCase())}">${h(record.status)}</span></header>
-    <dl><div><dt>Área candidata</dt><dd>${record.projected_area_mm2==null?number.format(record.candidate_pixels)+' px²':metricValue(record.projected_area_mm2,'mm²')}</dd></div><div><dt>Comprimento</dt><dd>${record.projected_length_mm==null?metricValue(record.projected_length_px,'px'):metricValue(record.projected_length_mm,'mm')}</dd></div><div><dt>Diâmetro médio</dt><dd>${metricValue(record.mean_diameter,record.diameter_unit)}</dd></div><div><dt>Ocupação</dt><dd>${metricValue(record.occupancy_percent,'%')}</dd></div><div><dt>Pontas</dt><dd>${metricValue(record.apparent_tips,'')}</dd></div><div><dt>Ramificações</dt><dd>${metricValue(record.apparent_branches,'')}</dd></div></dl>
+  target.innerHTML=records.map(record=>{
+    const isRefinement=Boolean(record.refinement_id);
+    const originLabel=isRefinement?'Refinamento':'EXP-003 Original';
+    const originClass=isRefinement?'tag-refinement':'tag-exp003';
+    return `<article class="root-analysis-card ${isRefinement?'is-refinement':''}">
+    <header>
+      <div>
+        <div class="analysis-card-kicker">
+          <span class="section-kicker">${h(record.sample_id||'SEM AMOSTRA')}</span>
+          <span class="analysis-origin-badge ${originClass}">${originLabel}</span>
+        </div>
+        <h3>${h(record.filename)}</h3>
+        <small>${h(record.created_at)} · ID: ${h(record.id.slice(0,8))}${isRefinement?` · Refinamento: ${h(record.refinement_id.slice(0,8))}`:''}</small>
+      </div>
+      <span class="metric-status ${h(record.status.toLowerCase())}">${h(record.status)}</span>
+    </header>
+    <dl>
+      <div><dt>Área candidata</dt><dd>${record.projected_area_mm2==null?number.format(record.candidate_pixels)+' px²':metricValue(record.projected_area_mm2,'mm²')}</dd></div>
+      <div><dt>Comprimento</dt><dd>${record.projected_length_mm==null?metricValue(record.projected_length_px,'px'):metricValue(record.projected_length_mm,'mm')}</dd></div>
+      <div><dt>Diâmetro médio</dt><dd>${metricValue(record.mean_diameter,record.diameter_unit)}</dd></div>
+      <div><dt>Ocupação</dt><dd>${metricValue(record.occupancy_percent,'%')}</dd></div>
+      <div><dt>Pontas</dt><dd>${metricValue(record.apparent_tips,'')}</dd></div>
+      <div><dt>Ramificações</dt><dd>${metricValue(record.apparent_branches,'')}</dd></div>
+    </dl>
     ${record.notes?`<p class="root-analysis-notes">${h(record.notes)}</p>`:''}
-    <footer><button type="button" class="button primary open-analysis-record" data-metric="${h(record.id)}">Ver análise →</button><a class="button outline" href="/api/v1/images/${encodeURIComponent(record.image_id)}/profiles/roots-exp003/${encodeURIComponent(record.profile_run_id)}/metrics/export.csv" download>CSV</a><a class="button outline" href="/api/v1/images/${encodeURIComponent(record.image_id)}/profiles/roots-exp003/${encodeURIComponent(record.profile_run_id)}/metrics/export.json" download>JSON</a><button type="button" class="button danger delete-analysis-record" data-metric="${h(record.id)}" data-filename="${h(record.filename)}">Excluir análise</button></footer>
-  </article>`).join('');
+    <footer>
+      <button type="button" class="button primary open-analysis-record" data-metric="${h(record.id)}">Ver análise →</button>
+      <a class="button outline" href="/api/v1/root-metrics/${encodeURIComponent(record.id)}/export.csv" download>CSV</a>
+      <a class="button outline" href="/api/v1/root-metrics/${encodeURIComponent(record.id)}/export.json" download>JSON</a>
+      <button type="button" class="button danger delete-analysis-record" data-metric="${h(record.id)}" data-filename="${h(record.filename)}" data-origin="${originLabel}">Excluir análise</button>
+    </footer>
+  </article>`;
+  }).join('');
   target.querySelectorAll('.open-analysis-record').forEach(button=>button.addEventListener('click',()=>openRootMetricDetail(button.dataset.metric)));
-  target.querySelectorAll('.delete-analysis-record').forEach(button=>button.addEventListener('click',()=>deleteRootMetricRecord(button.dataset.metric,button.dataset.filename)));
+  target.querySelectorAll('.delete-analysis-record').forEach(button=>button.addEventListener('click',()=>deleteRootMetricRecord(button.dataset.metric,button.dataset.filename,button.dataset.origin)));
 }
-async function deleteRootMetricRecord(metricId,filename){
- if(!confirm(`Excluir análise de “${filename}”? A imagem original será preservada e a exclusão permanecerá auditável.`))return;
+async function deleteRootMetricRecord(metricId,filename,origin=''){
+ const label=origin?` (${origin})`:'';
+ if(!confirm(`Excluir análise${label} de “${filename}”? A imagem original será preservada e a exclusão permanecerá auditável.`))return;
  try{await api(`/api/v1/root-metrics/${encodeURIComponent(metricId)}`,{method:'DELETE'});rootMetricRecords=rootMetricRecords.filter(item=>item.id!==metricId);renderRootMetricRecords();toast('Análise removida do catálogo. Imagem original preservada.');}catch(error){toast(error.message);}
 }
 async function loadRootMetricRecords(){
