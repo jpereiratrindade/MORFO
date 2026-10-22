@@ -5,22 +5,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$SCRIPT_DIR"
 
-# Carregar variáveis de ambiente se o arquivo existir
-if [[ -f "$SCRIPT_DIR/.env" ]]; then
-  set -a
-  # shellcheck source=/dev/null
-  source "$SCRIPT_DIR/.env"
-  set +a
-elif [[ -f "/etc/morfo.env" ]]; then
-  set -a
-  # shellcheck source=/dev/null
-  source "/etc/morfo.env"
-  set +a
-fi
-
 PID_FILE="$SCRIPT_DIR/var/morfo.pid"
 LOG_FILE="$SCRIPT_DIR/var/morfo.log"
 BIN="$SCRIPT_DIR/build/morfo-server"
+
+# O morfo-server carrega nativamente o arquivo .env (C++).
+# Não executamos 'source .env' no shell para permitir senhas com espaços (como as de app do Google)
+# sem necessidade de aspas obrigatórias no bash.
 
 usage() {
   cat <<'HELP'
@@ -60,18 +51,18 @@ get_pid() {
 cmd="${1:-help}"
 case "$cmd" in
   start)
+    shift || true
     if is_running; then
       echo "[MORFO] Já em execução (PID: $(get_pid))"
       exit 0
     fi
     mkdir -p "$SCRIPT_DIR/var"
-    nohup "$BIN" --host "${MORFO_HOST:-0.0.0.0}" --port "${MORFO_PORT:-8091}" --data-dir "${MORFO_DATA_DIR:-./var}" --web-dir "${MORFO_WEB_DIR:-./web}" >> "$LOG_FILE" 2>&1 &
+    nohup "$BIN" "$@" >> "$LOG_FILE" 2>&1 &
     new_pid=$!
     echo "$new_pid" > "$PID_FILE"
     sleep 1
     if kill -0 "$new_pid" 2>/dev/null; then
       echo "[MORFO] Servidor iniciado com sucesso (PID: $new_pid)"
-      echo "[MORFO] Acesso: http://${MORFO_HOST:-0.0.0.0}:${MORFO_PORT:-8091}"
       echo "[MORFO] Log: $LOG_FILE"
     else
       echo "[MORFO ERRO] Falha ao iniciar. Verifique o log: $LOG_FILE"
@@ -118,11 +109,12 @@ case "$cmd" in
     fi
     ;;
   run)
+    shift || true
     if is_running; then
       echo "[MORFO] Já em execução (PID: $(get_pid)). Pare antes de rodar em foreground."
       exit 1
     fi
-    exec "$BIN" --host "${MORFO_HOST:-0.0.0.0}" --port "${MORFO_PORT:-8091}" --data-dir "${MORFO_DATA_DIR:-./var}" --web-dir "${MORFO_WEB_DIR:-./web}"
+    exec "$BIN" "$@"
     ;;
   logs)
     if [[ -f "$LOG_FILE" ]]; then
