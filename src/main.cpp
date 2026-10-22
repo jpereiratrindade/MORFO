@@ -1824,8 +1824,54 @@ static void session(tcp::socket socket,App& app){
  http::write(stream,r,ec);stream.socket().shutdown(tcp::socket::shutdown_both,ec);
  }catch(const std::exception& e){std::cerr<<"Connection error: "<<e.what()<<"\n";}
 }
+static void load_env_file(const fs::path& p){
+ std::ifstream file(p);
+ if(!file.is_open())return;
+ std::string line;
+ while(std::getline(file,line)){
+  auto start=line.find_first_not_of(" \t\r\n");
+  if(start==std::string::npos||line[start]=='#')continue;
+  auto eq=line.find('=',start);
+  if(eq==std::string::npos)continue;
+  std::string key=line.substr(start,eq-start);
+  auto k_end=key.find_last_not_of(" \t\r\n");
+  if(k_end!=std::string::npos)key=key.substr(0,k_end+1);
+  std::string val=line.substr(eq+1);
+  auto v_start=val.find_first_not_of(" \t\r\n");
+  if(v_start==std::string::npos)val="";
+  else{
+   val=val.substr(v_start);
+   auto v_end=val.find_last_not_of(" \t\r\n");
+   if(v_end!=std::string::npos)val=val.substr(0,v_end+1);
+  }
+  if(val.size()>=2&&((val.front()=='"'&&val.back()=='"')||(val.front()=='\''&&val.back()=='\''))){
+   val=val.substr(1,val.size()-2);
+  }
+  if(std::getenv(key.c_str())==nullptr){
+   ::setenv(key.c_str(),val.c_str(),1);
+  }
+ }
+}
+
 int main(int argc,char** argv){try{
- ::umask(0077);App app;app.root="./var";app.web="./web";bool migrate_only=false;
+ ::umask(0077);
+ std::string env_file;
+ for(int i=1;i<argc;i++){
+  std::string a=argv[i];
+  if(a=="--env-file"&&i+1<argc){env_file=argv[++i];break;}
+ }
+ if(!env_file.empty()){
+  load_env_file(env_file);
+ }else{
+  if(fs::exists("./.env"))load_env_file("./.env");
+  else if(fs::exists("/etc/morfo.env"))load_env_file("/etc/morfo.env");
+ }
+
+ App app;app.root="./var";app.web="./web";bool migrate_only=false;
+ if(const char* h=std::getenv("MORFO_HOST"))if(*h)app.host=h;
+ if(const char* p=std::getenv("MORFO_PORT"))if(*p){try{int pt=std::stoi(p);if(pt>=1024&&pt<=65535)app.port=static_cast<unsigned short>(pt);}catch(...){}}
+ if(const char* d=std::getenv("MORFO_DATA_DIR"))if(*d)app.root=d;
+ if(const char* w=std::getenv("MORFO_WEB_DIR"))if(*w)app.web=w;
  std::string add_user_email;
  std::string add_user_name;
  std::string add_user_role="admin";
@@ -1836,7 +1882,8 @@ int main(int argc,char** argv){try{
  TIFFSetWarningHandler(nullptr);TIFFSetErrorHandler(nullptr);
  for(int i=1;i<argc;i++){
   std::string a=argv[i];
-  if(a=="--data-dir"&&i+1<argc)app.root=argv[++i];
+  if(a=="--env-file"&&i+1<argc)++i;
+  else if(a=="--data-dir"&&i+1<argc)app.root=argv[++i];
   else if(a=="--web-dir"&&i+1<argc)app.web=argv[++i];
   else if(a=="--host"&&i+1<argc)app.host=argv[++i];
   else if(a=="--port"&&i+1<argc){
@@ -1851,7 +1898,7 @@ int main(int argc,char** argv){try{
   else if(a=="--list-users")list_users=true;
   else if(a=="--deactivate-user"&&i+1<argc)deactivate_email=argv[++i];
   else if(a=="--activate-user"&&i+1<argc)activate_email=argv[++i];
-  else throw Failure("Usage: morfo-server [--host IP] [--data-dir DIRECTORY] [--web-dir DIRECTORY] [--port 1024..65535] [--migrate-only] [--add-user EMAIL [--name NAME] [--role ROLE]] [--list-users] [--deactivate-user EMAIL] [--activate-user EMAIL]");
+  else throw Failure("Usage: morfo-server [--env-file PATH] [--host IP] [--data-dir DIRECTORY] [--web-dir DIRECTORY] [--port 1024..65535] [--migrate-only] [--add-user EMAIL [--name NAME] [--role ROLE]] [--list-users] [--deactivate-user EMAIL] [--activate-user EMAIL]");
  }
  initialize(app);
  if(migrate_only){std::cout<<"MORFO SQLite migrations complete\n";return 0;}
@@ -1903,6 +1950,14 @@ int main(int argc,char** argv){try{
  boost::system::error_code ec;auto addr=asio::ip::make_address(app.host,ec);
  if(ec)throw Failure("Invalid IP address for --host: "+app.host);
  tcp::acceptor acceptor(io,{addr,app.port});
- std::cout<<"MORFO v"<<MORFO_VERSION<<" — http://"<<app.host<<":"<<app.port<<(app.host=="127.0.0.1"?" (loopback only)":app.host=="0.0.0.0"?" (all interfaces / LAN)":" (local network)")<<"\n"<<"Data dir: "<<fs::absolute(app.root)<<"\n"<<std::flush;
+ const auto& smtp_cfg = app.auth_service.config();
+ std::cout<<"MORFO v"<<MORFO_VERSION<<" — http://"<<app.host<<":"<<app.port<<(app.host=="127.0.0.1"?" (loopback only)":app.host=="0.0.0.0"?" (all interfaces / LAN)":" (local network)")<<"\n"
+          <<"Data dir: "<<fs::absolute(app.root)<<"\n";
+ if(!smtp_cfg.smtp_user.empty()&&!smtp_cfg.smtp_pass.empty()){
+  std::cout<<"Auth SMTP: remetente "<<smtp_cfg.smtp_from<<" via "<<smtp_cfg.smtp_host<<":"<<smtp_cfg.smtp_port<<" [ATIVO]\n";
+ }else{
+  std::cout<<"Auth SMTP: remetente e senha de app pendentes em .env [MODO LOCAL / DEV]\n";
+ }
+ std::cout<<std::flush;
  for(;;){tcp::socket s(io);acceptor.accept(s);if(app.active.load()>=4){s.close();continue;}++app.active;std::thread(session,std::move(s),std::ref(app)).detach();}
  }catch(const std::exception& e){std::cerr<<"MORFO fatal: "<<e.what()<<"\n";return 1;}}

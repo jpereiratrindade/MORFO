@@ -1,0 +1,23 @@
+[Unit]
+Description=MORFO Perception & Scientific Analysis Platform - LABECO
+After=network.target
+
+[Service]
+Type=simple
+User=jpereiratrindade
+Group=jpereiratrindade
+WorkingDirectory=/run/media/jpereiratrindade/labeco10T/dev/cpp/MORFO
+EnvironmentFile=-/etc/morfo.env
+EnvironmentFile=-/run/media/jpereiratrindade/labeco10T/dev/cpp/MORFO/.env
+
+ExecStart=/run/media/jpereiratrindade/labeco10T/dev/cpp/MORFO/build/morfo-server --host 0.0.0.0 --port 8091 --data-dir ./var --web-dir ./web
+
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

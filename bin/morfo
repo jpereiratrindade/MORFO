@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+# MORFO — Script de inicialização e controle operacional
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd "$SCRIPT_DIR"
+
+# Carregar variáveis de ambiente se o arquivo existir
+if [[ -f "$SCRIPT_DIR/.env" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source "$SCRIPT_DIR/.env"
+  set +a
+elif [[ -f "/etc/morfo.env" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source "/etc/morfo.env"
+  set +a
+fi
+
+PID_FILE="$SCRIPT_DIR/var/morfo.pid"
+LOG_FILE="$SCRIPT_DIR/var/morfo.log"
+BIN="$SCRIPT_DIR/build/morfo-server"
+
+usage() {
+  cat <<'HELP'
+MORFO — Plataforma de Percepção Visual e Descoberta de Padrões
+Uso: bin/morfo [comando]
+
+Comandos:
+  start       Inicia o servidor em segundo plano (background)
+  stop        Para o servidor
+  restart     Reinicia o servidor
+  status      Exibe o estado operacional e conectividade HTTP
+  run         Executa em primeiro plano (foreground) para logs ao vivo
+  logs        Acompanha logs do servidor (tail -f)
+  help        Exibe esta ajuda
+HELP
+}
+
+is_running() {
+  if [[ -f "$PID_FILE" ]]; then
+    local pid
+    pid="$(cat "$PID_FILE")"
+    if kill -0 "$pid" 2>/dev/null; then
+      return 0
+    fi
+  fi
+  pgrep -f "$BIN" >/dev/null 2>&1
+}
+
+get_pid() {
+  if [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+    cat "$PID_FILE"
+  else
+    pgrep -f "$BIN" | head -n1 || true
+  fi
+}
+
+cmd="${1:-help}"
+case "$cmd" in
+  start)
+    if is_running; then
+      echo "[MORFO] Já em execução (PID: $(get_pid))"
+      exit 0
+    fi
+    mkdir -p "$SCRIPT_DIR/var"
+    nohup "$BIN" --host "${MORFO_HOST:-0.0.0.0}" --port "${MORFO_PORT:-8091}" --data-dir "${MORFO_DATA_DIR:-./var}" --web-dir "${MORFO_WEB_DIR:-./web}" >> "$LOG_FILE" 2>&1 &
+    new_pid=$!
+    echo "$new_pid" > "$PID_FILE"
+    sleep 1
+    if kill -0 "$new_pid" 2>/dev/null; then
+      echo "[MORFO] Servidor iniciado com sucesso (PID: $new_pid)"
+      echo "[MORFO] Acesso: http://${MORFO_HOST:-0.0.0.0}:${MORFO_PORT:-8091}"
+      echo "[MORFO] Log: $LOG_FILE"
+    else
+      echo "[MORFO ERRO] Falha ao iniciar. Verifique o log: $LOG_FILE"
+      exit 1
+    fi
+    ;;
+  stop)
+    pid="$(get_pid)"
+    if [[ -n "$pid" ]]; then
+      echo "[MORFO] Encerrando servidor (PID: $pid)..."
+      kill "$pid" 2>/dev/null || true
+      for _ in {1..15}; do
+        if ! kill -0 "$pid" 2>/dev/null; then
+          break
+        fi
+        sleep 0.2
+      done
+      if kill -0 "$pid" 2>/dev/null; then
+        echo "[MORFO] Forçando encerramento (SIGKILL)..."
+        kill -9 "$pid" 2>/dev/null || true
+      fi
+      rm -f "$PID_FILE"
+      echo "[MORFO] Servidor encerrado."
+    else
+      echo "[MORFO] Nenhum processo em execução."
+      rm -f "$PID_FILE"
+    fi
+    ;;
+  restart)
+    "$0" stop
+    sleep 1
+    "$0" start
+    ;;
+  status)
+    pid="$(get_pid)"
+    if [[ -n "$pid" ]]; then
+      echo "[MORFO] ATIVO (PID: $pid)"
+      port="${MORFO_PORT:-8091}"
+      if curl -s -f "http://127.0.0.1:$port/api/v1/health" >/dev/null 2>&1; then
+        echo "[MORFO] Resposta HTTP: OK (http://127.0.0.1:$port/api/v1/health)"
+      fi
+    else
+      echo "[MORFO] PARADO (nenhum processo em execução)"
+    fi
+    ;;
+  run)
+    if is_running; then
+      echo "[MORFO] Já em execução (PID: $(get_pid)). Pare antes de rodar em foreground."
+      exit 1
+    fi
+    exec "$BIN" --host "${MORFO_HOST:-0.0.0.0}" --port "${MORFO_PORT:-8091}" --data-dir "${MORFO_DATA_DIR:-./var}" --web-dir "${MORFO_WEB_DIR:-./web}"
+    ;;
+  logs)
+    if [[ -f "$LOG_FILE" ]]; then
+      tail -f -n 50 "$LOG_FILE"
+    else
+      echo "[MORFO] Arquivo de log ainda não existe: $LOG_FILE"
+    fi
+    ;;
+  help|-h|--help)
+    usage
+    ;;
+  *)
+    usage
+    exit 1
+    ;;
+esac
