@@ -24,7 +24,10 @@ Image tiff_read(const fs::path& p){
  std::vector<std::uint32_t> buffer(static_cast<std::size_t>(w)*h);
  if(!TIFFReadRGBAImageOriented(handle,w,h,buffer.data(),ORIENTATION_TOPLEFT,0)){TIFFClose(handle);throw std::runtime_error("Não foi possível decodificar TIFF");}
  TIFFClose(handle);Image img{static_cast<int>(w),static_cast<int>(h),{}};img.pixels.resize(buffer.size());
- for(std::size_t i=0;i<buffer.size();++i)img.pixels[i]={TIFFGetR(buffer[i]),TIFFGetG(buffer[i]),TIFFGetB(buffer[i])};
+ for(std::size_t i=0;i<buffer.size();++i)img.pixels[i]={
+  static_cast<std::uint8_t>(TIFFGetR(buffer[i])),
+  static_cast<std::uint8_t>(TIFFGetG(buffer[i])),
+  static_cast<std::uint8_t>(TIFFGetB(buffer[i]))};
  return img;
 }
 Image png_read(const fs::path& p){

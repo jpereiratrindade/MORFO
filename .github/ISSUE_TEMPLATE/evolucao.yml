@@ -1,0 +1,47 @@
+name: Evolução rastreável
+description: Propor uma correção, funcionalidade ou mudança metodológica
+title: "[Evolução] "
+labels: ["status:proposto"]
+body:
+  - type: textarea
+    id: problema
+    attributes:
+      label: Problema observável
+      description: Descreva o problema, quem é afetado e a evidência disponível.
+    validations: {required: true}
+  - type: textarea
+    id: hipotese
+    attributes:
+      label: Hipótese ou resultado esperado
+      description: O que se espera aprender ou alterar?
+    validations: {required: true}
+  - type: textarea
+    id: escopo
+    attributes:
+      label: Escopo e exclusões
+      description: Inclua módulos afetados e o que não será tratado.
+    validations: {required: true}
+  - type: textarea
+    id: aceite
+    attributes:
+      label: Critérios de aceite
+      description: Liste comportamentos verificáveis e testes esperados.
+      placeholder: "- [ ] ..."
+    validations: {required: true}
+  - type: dropdown
+    id: ciencia
+    attributes:
+      label: Estado científico inicial
+      options:
+        - não se aplica
+        - hipótese
+        - verificado computacionalmente
+        - validado empiricamente
+        - limitado ou refutado
+    validations: {required: true}
+  - type: textarea
+    id: evidencias
+    attributes:
+      label: Evidências e referências
+      description: Dados, protocolo, documento, decisão anterior ou issue relacionada.
+

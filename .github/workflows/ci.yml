@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build and test (Clang 18)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Toolchain
+        run: |
+          cmake --version
+          clang++-18 --version
+          ninja --version
+          python3 --version
+
+      - name: Install image dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          timeout 120s sudo apt-get update
+          timeout 600s sudo apt-get install --yes --no-install-recommends \
+            libboost-dev libjpeg-dev libpng-dev libtiff-dev
+
+      - name: Configure
+        env:
+          CXX: clang++-18
+        run: cmake -S . -B build-ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+
+      - name: Build
+        run: cmake --build build-ci --parallel 2
+
+      - name: Test
+        run: ctest --test-dir build-ci --output-on-failure
