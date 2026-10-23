@@ -30,6 +30,11 @@ jobs:
           ninja --version
           python3 --version
 
+      - name: Install image dependencies
+        run: |
+          timeout 120s sudo apt-get install --yes --no-install-recommends \
+            libboost-dev libjpeg-dev libpng-dev libtiff-dev
+
       - name: Configure
         env:
           CXX: clang++-18
