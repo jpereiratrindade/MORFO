@@ -35,7 +35,7 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           timeout 120s sudo apt-get update
-          timeout 120s sudo apt-get install --yes --no-install-recommends \
+          timeout 600s sudo apt-get install --yes --no-install-recommends \
             libboost-dev libjpeg-dev libpng-dev libtiff-dev
 
       - name: Configure
