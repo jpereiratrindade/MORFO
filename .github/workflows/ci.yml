@@ -21,7 +21,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Toolchain
         run: |
@@ -31,7 +31,10 @@ jobs:
           python3 --version
 
       - name: Install image dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
+          timeout 120s sudo apt-get update
           timeout 120s sudo apt-get install --yes --no-install-recommends \
             libboost-dev libjpeg-dev libpng-dev libtiff-dev
 
