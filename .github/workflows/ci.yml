@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   build-and-test:
-    name: Build and test (GCC 14)
+    name: Build and test (Clang 18)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
@@ -23,16 +23,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Toolchain
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends \
-            cmake g++-14 ninja-build python3 \
-            libboost-dev libjpeg-dev libpng-dev libsqlite3-dev libssl-dev libtiff-dev
+          cmake --version
+          clang++-18 --version
+          ninja --version
+          python3 --version
 
       - name: Configure
         env:
-          CXX: g++-14
+          CXX: clang++-18
         run: cmake -S . -B build-ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
 
       - name: Build
