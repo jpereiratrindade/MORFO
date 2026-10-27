@@ -19,9 +19,8 @@ const $ = id => document.getElementById(id);
 const h = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const number = new Intl.NumberFormat('pt-BR');
 let images = [], selectedFiles = [], rootMetricRecords = [], current = null, mode = 'original', currentUser = null, currentAnalysis = null, analysisRuns = [], selectedRegion = null;
-let evaluationProtocols = [];
 let viewer = {imageId:null, manifest:null, scale:1, x:0, y:0, fit:true, drag:null, revision:0, frame:0};
-const viewNames = {acervo:'Acervo de imagens',recebimento:'Recebimento',analises:'Análises radiculares',avaliacao:'Avaliação científica',integridade:'Integridade e origem',sobre:'Sobre o MORFO',usuarios:'Gestão de Usuários & Acesso'};
+const viewNames = {acervo:'Acervo de imagens',recebimento:'Recebimento',analises:'Análises radiculares',integridade:'Integridade e origem',sobre:'Sobre o MORFO',usuarios:'Gestão de Usuários & Acesso'};
 
 const STRATEGY_DESCRIPTIONS = {
   BAYESIAN_CALIBRATED: {
@@ -75,69 +74,8 @@ function nav(view){
   location.hash = view;
   window.scrollTo(0, 0);
   if(view==='analises'){showRootAnalysisCatalog();loadRootMetricRecords();}
-  if(view==='avaliacao')loadEvaluation();
   if(view==='usuarios'){loadUsers();}
-}
-
-async function loadEvaluation(){
- const target=$('evaluation-results'),protocolTarget=$('evaluation-protocol-list'),datasetTarget=$('evaluation-dataset-list');if(!target)return;
- target.innerHTML='<div class="empty"><h3>Carregando evidências…</h3></div>';protocolTarget.innerHTML='<div class="empty"><h3>Carregando protocolos…</h3></div>';datasetTarget.innerHTML='<div class="empty"><h3>Carregando conjuntos…</h3></div>';
- try{
-  const [payload,protocolPayload,datasetPayload]=await Promise.all([api('/api/v1/evaluation/overview'),api('/api/v1/evaluation/protocols'),api('/api/v1/evaluation/datasets')]),data=payload.data||{},counts=data.counts||{},summaries=data.summaries||[],protocols=protocolPayload.data||[];
-  $('eval-protocols').textContent=number.format(counts.protocols||0);$('eval-datasets').textContent=number.format(counts.datasets||0);$('eval-runs').textContent=number.format(counts.runs||0);$('eval-completed').textContent=number.format(counts.completed||0);
-  renderEvaluationProtocols(protocols);
-  renderEvaluationDatasets(datasetPayload.data||[]);
-  if(!summaries.length){target.innerHTML='<div class="empty evaluation-empty"><h3>Nenhuma conclusão fabricada.</h3><p>Fundação pronta. Primeiro protocolo e conjunto de referência ainda precisam ser constituídos; até lá, painel permanece honestamente vazio.</p></div>';return;}
-  target.innerHTML=`<div class="evaluation-grid">${summaries.map(item=>`<article class="evaluation-card"><header><span>${h(item.metric)}</span><small>${h(item.protocol)}</small></header><strong>${Number(item.estimate).toLocaleString('pt-BR',{maximumFractionDigits:4})}</strong><p>${item.ci_lower==null?'Intervalo não registrado':`IC 95% · ${Number(item.ci_lower).toLocaleString('pt-BR',{maximumFractionDigits:4})} — ${Number(item.ci_upper).toLocaleString('pt-BR',{maximumFractionDigits:4})}`}</p><footer>${h(item.algorithm)} ${h(item.algorithm_version)} · n=${number.format(item.sample_count)}</footer></article>`).join('')}</div>`;
- }catch(error){target.innerHTML=`<div class="empty"><h3>Falha ao carregar avaliação</h3><p>${h(error.message)}</p></div>`;}
-}
-
-function renderEvaluationDatasets(datasets){
- const target=$('evaluation-dataset-list');
- if(!datasets.length){target.innerHTML='<div class="empty"><h3>Nenhuma imagem vinculada.</h3><p>Abra imagem no Acervo, execute perfil EXP-003 e use “Adicionar ao experimento”.</p></div>';return;}
- target.innerHTML=`<div class="dataset-list">${datasets.map(item=>`<article class="dataset-card"><header><div><span>${h(item.protocol)}</span><h3>${h(item.name)}</h3></div><b class="protocol-state ${item.state==='FROZEN'?'frozen':'draft'}">${item.state==='FROZEN'?'CONGELADO':'RASCUNHO'}</b></header><div class="dataset-manifest"><span>Manifesto SHA-256</span><code>${h(item.content_sha256)}</code></div><div class="dataset-units"><div class="dataset-unit dataset-unit-head"><span>Imagem / amostra</span><span>Grupo experimental</span><span>Separação e referência</span></div>${item.units.map(unit=>`<div class="dataset-unit"><span><strong>${h(unit.filename||unit.external_key)}</strong><small>${h(unit.sample_id||unit.image_id)}</small></span><span>${h(unit.group_key)}</span><span><b>${unit.split==='TEST'?'TESTE':'DESENVOLVIMENTO'}</b><small>EXP-003 ${h((unit.profile_run_id||'').slice(0,8))}</small><small class="reference-state ${unit.reference_sha256?'ready':''}">${unit.reference_sha256?`Referência: ${h(unit.reference_filename)} · ${h(unit.reference_sha256.slice(0,8))}`:'Referência pendente'}</small>${item.state==='DRAFT'?`<span class="dataset-unit-actions"><button type="button" data-unit-edit="${h(item.id)}:${h(unit.id)}">Editar</button><label>Enviar referência<input type="file" accept="image/png" data-unit-reference="${h(item.id)}:${h(unit.id)}"></label><button class="danger" type="button" data-unit-delete="${h(item.id)}:${h(unit.id)}">Remover</button></span>`:''}</span></div>`).join('')}</div><footer><span>${number.format(item.units.length)} unidade(s)${item.frozen_at?` · congelado em ${h(item.frozen_at)}`:''}</span>${item.state==='DRAFT'?`<button class="button primary" type="button" data-dataset-freeze="${h(item.id)}">Congelar conjunto</button>`:'<strong>Manifesto imutável</strong>'}</footer></article>`).join('')}</div>`;
- target.querySelectorAll('[data-dataset-freeze]').forEach(button=>button.onclick=()=>freezeEvaluationDataset(button.dataset.datasetFreeze,button));
- target.querySelectorAll('[data-unit-edit]').forEach(button=>button.onclick=()=>editEvaluationUnit(button.dataset.unitEdit));
- target.querySelectorAll('[data-unit-delete]').forEach(button=>button.onclick=()=>deleteEvaluationUnit(button.dataset.unitDelete));
- target.querySelectorAll('[data-unit-reference]').forEach(input=>input.onchange=()=>uploadEvaluationReference(input.dataset.unitReference,input));
-}
-
-async function editEvaluationUnit(key){const [datasetId,unitId]=key.split(':'),dataset=(await api('/api/v1/evaluation/datasets')).data.find(item=>item.id===datasetId),unit=dataset?.units.find(item=>item.id===unitId);if(!unit)return;const group=prompt('Grupo experimental:',unit.group_key);if(!group?.trim())return;const split=confirm('Unidade pertence ao conjunto de TESTE?\nOK = TESTE · Cancelar = DESENVOLVIMENTO')?'TEST':'DEVELOPMENT';try{await api(`/api/v1/evaluation/datasets/${datasetId}/units/${unitId}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({group_key:group.trim(),split})});await loadEvaluation();toast('Unidade experimental atualizada.');}catch(error){toast(error.message);}}
-async function deleteEvaluationUnit(key){if(!confirm('Remover esta unidade do conjunto em rascunho? A análise original será preservada.'))return;const [datasetId,unitId]=key.split(':');try{await api(`/api/v1/evaluation/datasets/${datasetId}/units/${unitId}`,{method:'DELETE'});await loadEvaluation();toast('Unidade removida. Análise original preservada.');}catch(error){toast(error.message);}}
-async function uploadEvaluationReference(key,input){const file=input.files?.[0];if(!file)return;const [datasetId,unitId]=key.split(':');if(file.type!=='image/png'){toast('Referência deve ser PNG.');input.value='';return;}try{await api(`/api/v1/evaluation/datasets/${datasetId}/units/${unitId}/reference`,{method:'POST',headers:{'Content-Type':'image/png','X-Reference-Filename':file.name},body:file});await loadEvaluation();toast('Referência independente registrada.');}catch(error){toast(error.message);input.value='';}}
-
-async function freezeEvaluationDataset(id,button){
- if(!confirm('Congelar este conjunto? Imagens, grupos e separação não poderão mudar.'))return;button.disabled=true;
- try{await api(`/api/v1/evaluation/datasets/${id}/freeze`,{method:'POST'});await loadEvaluation();toast('Conjunto congelado. Manifesto preservado.');}catch(error){toast(error.message);}finally{button.disabled=false;}
-}
-
-function renderEvaluationProtocols(protocols){
- evaluationProtocols=protocols;
- const target=$('evaluation-protocol-list');
- if(!protocols.length){target.innerHTML='<div class="empty"><h3>Nenhum protocolo constituído.</h3><p>Crie hipótese, tarefa, unidade experimental e critério de aceitação.</p></div>';return;}
- target.innerHTML=`<div class="protocol-list">${protocols.map(item=>`<article class="protocol-card"><header><div><span>${h(item.task)}</span><h3>${h(item.title)} <small>v${number.format(item.version)}</small></h3></div><b class="protocol-state ${item.state==='FROZEN'?'frozen':'draft'}">${item.state==='FROZEN'?'CONGELADO':'RASCUNHO'}</b></header><p>${h(item.hypothesis)}</p><dl><div><dt>Unidade experimental</dt><dd>${h(item.experimental_unit)}</dd></div><div><dt>Separação</dt><dd>${h(item.split_strategy)}</dd></div><div><dt>Critério</dt><dd>${h(item.acceptance_criteria?.statement||'—')}</dd></div></dl>${item.limitations?`<footer><strong>Limitações:</strong> ${h(item.limitations)}</footer>`:''}<div class="protocol-actions"><button class="button outline" type="button" data-protocol-version="${h(item.id)}">Criar nova versão</button>${item.state==='DRAFT'?`<button class="button primary" type="button" data-protocol-freeze="${h(item.id)}">Congelar protocolo</button>`:'<span>Versão imutável</span>'}</div></article>`).join('')}</div>`;
- target.querySelectorAll('[data-protocol-version]').forEach(button=>button.onclick=()=>newEvaluationProtocolVersion(button.dataset.protocolVersion));
- target.querySelectorAll('[data-protocol-freeze]').forEach(button=>button.onclick=()=>freezeEvaluationProtocol(button.dataset.protocolFreeze,button));
-}
-
-function openEvaluationProtocol(protocol=null){
- $('evaluation-protocol-form').reset();
- if(protocol){$('evaluation-title-input').value=protocol.title;$('evaluation-hypothesis').value=protocol.hypothesis;$('evaluation-task').value=protocol.task;$('evaluation-unit').value=protocol.experimental_unit;$('evaluation-split').value=protocol.split_strategy;$('evaluation-criteria').value=protocol.acceptance_criteria?.statement||'';$('evaluation-limitations').value=protocol.limitations||'';$('evaluation-protocol-title').textContent=`Nova versão · ${protocol.title}`;}
- else $('evaluation-protocol-title').textContent='Novo protocolo científico';
- $('evaluation-protocol-modal').classList.remove('hidden');
-}
-function newEvaluationProtocolVersion(id){const protocol=evaluationProtocols.find(item=>item.id===id);if(protocol)openEvaluationProtocol(protocol);}
-async function freezeEvaluationProtocol(id,button){
- if(!confirm('Congelar este protocolo? Esta versão se tornará imutável.'))return;button.disabled=true;
- try{await api(`/api/v1/evaluation/protocols/${id}/freeze`,{method:'POST'});await loadEvaluation();toast('Protocolo congelado. Versão preservada.');}catch(error){toast(error.message);}finally{button.disabled=false;}
-}
-
-function closeEvaluationProtocol(){$('evaluation-protocol-modal').classList.add('hidden');}
-async function createEvaluationProtocol(event){
- event.preventDefault();const button=event.submitter;button.disabled=true;
- try{await api('/api/v1/evaluation/protocols',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:$('evaluation-title-input').value.trim(),hypothesis:$('evaluation-hypothesis').value.trim(),task:$('evaluation-task').value,experimental_unit:$('evaluation-unit').value.trim(),split_strategy:$('evaluation-split').value.trim(),acceptance_criteria:$('evaluation-criteria').value.trim(),limitations:$('evaluation-limitations').value.trim(),state:$('evaluation-freeze').checked?'FROZEN':'DRAFT'})});closeEvaluationProtocol();$('evaluation-protocol-form').reset();await loadEvaluation();toast('Protocolo científico criado e versionado.');}catch(error){toast(error.message);}finally{button.disabled=false;}
-}
-
+ }
 async function api(path, options = {}){
   const r = await fetch(path, options);
   let data = await r.json().catch(() => ({error: 'Resposta inválida do servidor'}));
@@ -2097,11 +2035,6 @@ restoreInspectorSize();
 
 for(const b of document.querySelectorAll('[data-view]')) b.addEventListener('click', () => nav(b.dataset.view));
 $('hero-upload').onclick = () => nav('recebimento');
-if($('refresh-evaluation')) $('refresh-evaluation').onclick=loadEvaluation;
-if($('new-evaluation-protocol')) $('new-evaluation-protocol').onclick=()=>openEvaluationProtocol();
-if($('close-evaluation-protocol')) $('close-evaluation-protocol').onclick=closeEvaluationProtocol;
-if($('cancel-evaluation-protocol')) $('cancel-evaluation-protocol').onclick=closeEvaluationProtocol;
-if($('evaluation-protocol-form')) $('evaluation-protocol-form').addEventListener('submit',createEvaluationProtocol);
 $('refresh').onclick = refresh;
 $('refresh-root-analyses').onclick = loadRootMetricRecords;
 $('root-analysis-search').oninput = renderRootMetricRecords;

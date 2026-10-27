@@ -1,4 +1,4 @@
-// MORFO v0.2.0: image-first acquisition, reproducible analysis and scientific evaluation.
+// MORFO v0.2.0: image-first acquisition and reproducible analysis.
 // Copyright (C) 2026 José Pedro Trindade
 //
 // This program is free software: you can redistribute it and/or modify
@@ -95,7 +95,6 @@ static std::string hash256_file(const fs::path& path){
  std::array<char,65536> block{};while(input){input.read(block.data(),block.size());auto count=input.gcount();if(count>0&&EVP_DigestUpdate(context.get(),block.data(),static_cast<std::size_t>(count))!=1)throw Failure("SHA-256 failed");}
  unsigned char digest[EVP_MAX_MD_SIZE];unsigned int length=0;if(EVP_DigestFinal_ex(context.get(),digest,&length)!=1)throw Failure("SHA-256 failed");return hex(digest,length);
 }
-static std::string hash256_text(std::string_view value){unsigned char digest[EVP_MAX_MD_SIZE];unsigned int length=0;std::unique_ptr<EVP_MD_CTX,decltype(&EVP_MD_CTX_free)> context(EVP_MD_CTX_new(),EVP_MD_CTX_free);if(!context||EVP_DigestInit_ex(context.get(),EVP_sha256(),nullptr)!=1||EVP_DigestUpdate(context.get(),value.data(),value.size())!=1||EVP_DigestFinal_ex(context.get(),digest,&length)!=1)throw Failure("SHA-256 failed");return hex(digest,length);}
 static std::uint32_t zip_crc32(std::string_view data){std::uint32_t crc=0xffffffffU;for(unsigned char byte:data){crc^=byte;for(int bit=0;bit<8;++bit)crc=(crc>>1)^((crc&1)?0xedb88320U:0U);}return crc^0xffffffffU;}
 static void zip_u16(std::string& out,std::uint16_t value){out.push_back(static_cast<char>(value));out.push_back(static_cast<char>(value>>8));}
 static void zip_u32(std::string& out,std::uint32_t value){for(int shift=0;shift<32;shift+=8)out.push_back(static_cast<char>(value>>shift));}
@@ -622,102 +621,6 @@ static std::string analysis_runs_json(const App& app,const std::string& image_id
  FROM analysis_runs a LEFT JOIN analysis_regions r ON r.run_id=a.id WHERE a.image_id=? AND a.deleted_at IS NULL
  GROUP BY a.id ORDER BY a.created_at DESC,a.rowid DESC)SQL");runs.bind(1,image_id);
  std::string out="{\"data\":[";bool first=true;while(sqlite3_step(runs.p)==SQLITE_ROW){if(!first)out+=',';first=false;out+="{\"id\":"+q(col(runs.p,0))+",\"algorithm_version\":"+q(col(runs.p,1))+",\"status\":"+q(col(runs.p,2))+",\"created_at\":"+q(col(runs.p,3))+",\"completed_at\":"+q(col(runs.p,4))+",\"region_count\":"+std::to_string(sqlite3_column_int64(runs.p,5))+",\"notes\":"+q(col(runs.p,6))+"}";}return out+"]}";
-}
-
-static std::string evaluation_overview_json(const App& app,const std::string& user_id){
- Db db(app.root/"morfo.sqlite3");
- auto count=[&](const char* sql){Stmt st(db.p,sql);st.bind(1,user_id);if(sqlite3_step(st.p)!=SQLITE_ROW)throw Failure("Cannot read evaluation overview");return sqlite3_column_int64(st.p,0);};
- const auto protocols=count("SELECT COUNT(*) FROM evaluation_protocols WHERE owner_user_id=?");
- const auto datasets=count("SELECT COUNT(*) FROM evaluation_datasets d JOIN evaluation_protocols p ON p.id=d.protocol_id WHERE p.owner_user_id=?");
- const auto runs=count("SELECT COUNT(*) FROM evaluation_runs r JOIN evaluation_protocols p ON p.id=r.protocol_id WHERE p.owner_user_id=?");
- const auto completed=count("SELECT COUNT(*) FROM evaluation_runs r JOIN evaluation_protocols p ON p.id=r.protocol_id WHERE p.owner_user_id=? AND r.status='COMPLETED'");
- Stmt summaries(db.p,R"SQL(
-SELECT s.id,s.run_id,s.metric,s.estimate,s.ci_lower,s.ci_upper,s.sample_count,s.method,s.created_at,
-       r.algorithm,r.algorithm_version,p.title
- FROM evaluation_summaries s JOIN evaluation_runs r ON r.id=s.run_id
- JOIN evaluation_protocols p ON p.id=r.protocol_id
- WHERE p.owner_user_id=? ORDER BY s.created_at DESC,s.rowid DESC LIMIT 50
-)SQL");summaries.bind(1,user_id);
- std::ostringstream out;out<<"{\"schema\":\"morfo.evaluation-overview.v1\",\"data\":{\"counts\":{\"protocols\":"<<protocols<<",\"datasets\":"<<datasets<<",\"runs\":"<<runs<<",\"completed\":"<<completed<<"},\"summaries\":[";
- bool first=true;while(sqlite3_step(summaries.p)==SQLITE_ROW){if(!first)out<<',';first=false;out<<"{\"id\":"<<q(col(summaries.p,0))<<",\"run_id\":"<<q(col(summaries.p,1))<<",\"metric\":"<<q(col(summaries.p,2))<<",\"estimate\":"<<sqlite3_column_double(summaries.p,3)<<",\"ci_lower\":"<<(sqlite3_column_type(summaries.p,4)==SQLITE_NULL?"null":std::to_string(sqlite3_column_double(summaries.p,4)))<<",\"ci_upper\":"<<(sqlite3_column_type(summaries.p,5)==SQLITE_NULL?"null":std::to_string(sqlite3_column_double(summaries.p,5)))<<",\"sample_count\":"<<sqlite3_column_int64(summaries.p,6)<<",\"method\":"<<q(col(summaries.p,7))<<",\"created_at\":"<<q(col(summaries.p,8))<<",\"algorithm\":"<<q(col(summaries.p,9))<<",\"algorithm_version\":"<<q(col(summaries.p,10))<<",\"protocol\":"<<q(col(summaries.p,11))<<'}';}
- out<<"]}}";return out.str();
-}
-
-static std::string evaluation_protocols_json(const App& app,const std::string& user_id){
- Db db(app.root/"morfo.sqlite3");Stmt rows(db.p,R"SQL(
-SELECT id,title,hypothesis,task,experimental_unit,split_strategy,acceptance_criteria_json,
-       limitations,state,protocol_version,created_at
- FROM evaluation_protocols WHERE owner_user_id=? ORDER BY created_at DESC,rowid DESC
-)SQL");rows.bind(1,user_id);std::ostringstream out;out<<"{\"schema\":\"morfo.evaluation-protocols.v1\",\"data\":[";bool first=true;
- while(sqlite3_step(rows.p)==SQLITE_ROW){if(!first)out<<',';first=false;out<<"{\"id\":"<<q(col(rows.p,0))<<",\"title\":"<<q(col(rows.p,1))<<",\"hypothesis\":"<<q(col(rows.p,2))<<",\"task\":"<<q(col(rows.p,3))<<",\"experimental_unit\":"<<q(col(rows.p,4))<<",\"split_strategy\":"<<q(col(rows.p,5))<<",\"acceptance_criteria\":"<<col(rows.p,6)<<",\"limitations\":"<<q(col(rows.p,7))<<",\"state\":"<<q(col(rows.p,8))<<",\"version\":"<<sqlite3_column_int(rows.p,9)<<",\"created_at\":"<<q(col(rows.p,10))<<'}';}
- out<<"]}";return out.str();
-}
-
-static std::string evaluation_datasets_json(const App& app,const std::string& user_id){
- Db db(app.root/"morfo.sqlite3");Stmt datasets(db.p,R"SQL(
-SELECT d.id,d.protocol_id,d.name,d.content_sha256,d.reference_kind,d.frozen_at,d.created_at,d.state,p.title
- FROM evaluation_datasets d JOIN evaluation_protocols p ON p.id=d.protocol_id
- WHERE p.owner_user_id=? ORDER BY d.created_at DESC,d.rowid DESC
-)SQL");datasets.bind(1,user_id);std::ostringstream out;out<<"{\"schema\":\"morfo.evaluation-datasets.v1\",\"data\":[";bool first_dataset=true;
- while(sqlite3_step(datasets.p)==SQLITE_ROW){if(!first_dataset)out<<',';first_dataset=false;const std::string dataset_id=col(datasets.p,0);out<<"{\"id\":"<<q(dataset_id)<<",\"protocol_id\":"<<q(col(datasets.p,1))<<",\"name\":"<<q(col(datasets.p,2))<<",\"content_sha256\":"<<q(col(datasets.p,3))<<",\"reference_kind\":"<<q(col(datasets.p,4))<<",\"frozen_at\":"<<(col(datasets.p,5).empty()?"null":q(col(datasets.p,5)))<<",\"created_at\":"<<q(col(datasets.p,6))<<",\"state\":"<<q(col(datasets.p,7))<<",\"protocol\":"<<q(col(datasets.p,8))<<",\"units\":[";
-  Stmt units(db.p,R"SQL(SELECT u.id,u.external_key,u.split,u.group_key,u.input_sha256,u.metadata_json,u.image_id,u.profile_run_id,i.filename,i.sample_id,u.reference_sha256,u.reference_filename,u.reference_created_at FROM evaluation_units u LEFT JOIN images i ON i.id=u.image_id WHERE u.dataset_id=? ORDER BY u.rowid)SQL");units.bind(1,dataset_id);bool first_unit=true;while(sqlite3_step(units.p)==SQLITE_ROW){if(!first_unit)out<<',';first_unit=false;out<<"{\"id\":"<<q(col(units.p,0))<<",\"external_key\":"<<q(col(units.p,1))<<",\"split\":"<<q(col(units.p,2))<<",\"group_key\":"<<q(col(units.p,3))<<",\"input_sha256\":"<<q(col(units.p,4))<<",\"metadata\":"<<col(units.p,5)<<",\"image_id\":"<<q(col(units.p,6))<<",\"profile_run_id\":"<<q(col(units.p,7))<<",\"filename\":"<<q(col(units.p,8))<<",\"sample_id\":"<<q(col(units.p,9))<<",\"reference_sha256\":"<<(col(units.p,10).empty()?"null":q(col(units.p,10)))<<",\"reference_filename\":"<<(col(units.p,11).empty()?"null":q(col(units.p,11)))<<",\"reference_created_at\":"<<(col(units.p,12).empty()?"null":q(col(units.p,12)))<<'}';}out<<"]}";
- }
- out<<"]}";return out.str();
-}
-
-static void refresh_evaluation_manifest(sqlite3* db,const std::string& dataset_id){
- Stmt manifest(db,"SELECT input_sha256,split,group_key,profile_run_id,COALESCE(reference_sha256,'') FROM evaluation_units WHERE dataset_id=? ORDER BY external_key");manifest.bind(1,dataset_id);std::string material;while(sqlite3_step(manifest.p)==SQLITE_ROW)material+=col(manifest.p,0)+"|"+col(manifest.p,1)+"|"+col(manifest.p,2)+"|"+col(manifest.p,3)+"|"+col(manifest.p,4)+"\n";Stmt update(db,"UPDATE evaluation_datasets SET content_sha256=? WHERE id=? AND state='DRAFT'");update.bind(1,hash256_text(material));update.bind(2,dataset_id);if(sqlite3_step(update.p)!=SQLITE_DONE||sqlite3_changes(db)!=1)throw Failure("Draft evaluation dataset not found");
-}
-
-static std::string update_evaluation_unit(const App& app,const std::string& user_id,const std::string& dataset_id,const std::string& unit_id,const std::string& body){
- const auto split=json_extract_string(body,"split"),group=json_extract_string(body,"group_key");if(split!="DEVELOPMENT"&&split!="TEST")throw Failure("Split must be DEVELOPMENT or TEST");if(group.empty()||group.size()>160)throw Failure("Experimental group is required");Db db(app.root/"morfo.sqlite3");Stmt update(db.p,"UPDATE evaluation_units SET split=?,group_key=? WHERE id=? AND dataset_id=? AND EXISTS(SELECT 1 FROM evaluation_datasets d JOIN evaluation_protocols p ON p.id=d.protocol_id WHERE d.id=? AND d.state='DRAFT' AND p.owner_user_id=?)");update.bind(1,split);update.bind(2,group);update.bind(3,unit_id);update.bind(4,dataset_id);update.bind(5,dataset_id);update.bind(6,user_id);if(sqlite3_step(update.p)!=SQLITE_DONE||sqlite3_changes(db.p)!=1)throw Failure("Draft evaluation unit not found");refresh_evaluation_manifest(db.p,dataset_id);return evaluation_datasets_json(app,user_id);
-}
-
-static std::string delete_evaluation_unit(const App& app,const std::string& user_id,const std::string& dataset_id,const std::string& unit_id){
- Db db(app.root/"morfo.sqlite3");Stmt path(db.p,"SELECT reference_relative_path FROM evaluation_units u JOIN evaluation_datasets d ON d.id=u.dataset_id JOIN evaluation_protocols p ON p.id=d.protocol_id WHERE u.id=? AND d.id=? AND d.state='DRAFT' AND p.owner_user_id=?");path.bind(1,unit_id);path.bind(2,dataset_id);path.bind(3,user_id);if(sqlite3_step(path.p)!=SQLITE_ROW)throw Failure("Draft evaluation unit not found");const auto relative=col(path.p,0);Stmt remove(db.p,"DELETE FROM evaluation_units WHERE id=? AND dataset_id=?");remove.bind(1,unit_id);remove.bind(2,dataset_id);if(sqlite3_step(remove.p)!=SQLITE_DONE||sqlite3_changes(db.p)!=1)throw Failure("Draft evaluation unit not found");refresh_evaluation_manifest(db.p,dataset_id);if(!relative.empty()){std::error_code ec;fs::remove(app.root/relative,ec);}return evaluation_datasets_json(app,user_id);
-}
-
-static std::string add_evaluation_reference(const App& app,const std::string& user_id,const std::string& dataset_id,const std::string& unit_id,const std::string& filename,const std::string& bytes){
- if(bytes.empty())throw Failure("Reference mask is empty");
- if(bytes.size()>MAX_CONTROL_BODY)throw Failure("Reference mask exceeds 1 MiB");
- const auto reference=png_decode(bytes);Db db(app.root/"morfo.sqlite3");
- Stmt inspect(db.p,"SELECT i.width,i.height FROM evaluation_units u JOIN evaluation_datasets d ON d.id=u.dataset_id JOIN evaluation_protocols p ON p.id=d.protocol_id JOIN images i ON i.id=u.image_id WHERE u.id=? AND d.id=? AND d.state='DRAFT' AND p.owner_user_id=?");inspect.bind(1,unit_id);inspect.bind(2,dataset_id);inspect.bind(3,user_id);if(sqlite3_step(inspect.p)!=SQLITE_ROW)throw Failure("Draft evaluation unit not found");
- if(reference.w!=sqlite3_column_int(inspect.p,0)||reference.h!=sqlite3_column_int(inspect.p,1))throw Failure("Reference mask dimensions must match original image");
- const auto sha=hash256_text(bytes),relative=(fs::path("references")/dataset_id/(unit_id+".png")).generic_string();put(app.root/relative,bytes);
- try{Stmt update(db.p,"UPDATE evaluation_units SET reference_sha256=?,reference_relative_path=?,reference_filename=?,reference_created_by_user_id=?,reference_created_at=? WHERE id=? AND dataset_id=?");update.bind(1,sha);update.bind(2,relative);update.bind(3,filename.empty()?"reference.png":filename);update.bind(4,user_id);update.bind(5,utc_offset(0));update.bind(6,unit_id);update.bind(7,dataset_id);if(sqlite3_step(update.p)!=SQLITE_DONE||sqlite3_changes(db.p)!=1)throw Failure("Cannot register reference mask");Stmt kind(db.p,"UPDATE evaluation_datasets SET reference_kind='SPECIALIST' WHERE id=? AND state='DRAFT'");kind.bind(1,dataset_id);if(sqlite3_step(kind.p)!=SQLITE_DONE)throw Failure(sqlite3_errmsg(db.p));refresh_evaluation_manifest(db.p,dataset_id);return evaluation_datasets_json(app,user_id);}catch(...){std::error_code ec;fs::remove(app.root/relative,ec);throw;}
-}
-
-static std::string create_evaluation_protocol(const App& app,const std::string& user_id,const std::string& body){
- const auto title=json_extract_string(body,"title"),hypothesis=json_extract_string(body,"hypothesis"),task=json_extract_string(body,"task"),unit=json_extract_string(body,"experimental_unit"),split=json_extract_string(body,"split_strategy"),criteria=json_extract_string(body,"acceptance_criteria"),limitations=json_extract_string(body,"limitations"),state=json_extract_string(body,"state");
- const std::set<std::string> tasks={"CLASSIFICATION","SEGMENTATION","CLUSTERING","MEASUREMENT","ROBUSTNESS","REPRODUCIBILITY"};
- if(title.empty()||title.size()>160)throw Failure("Protocol title must contain 1..160 characters");
- if(hypothesis.empty()||hypothesis.size()>2000)throw Failure("Protocol hypothesis must contain 1..2000 characters");
- if(!tasks.contains(task))throw Failure("Invalid evaluation task");
- if(unit.empty()||unit.size()>160)throw Failure("Experimental unit is required");
- if(split.empty()||split.size()>500)throw Failure("Split strategy is required");
- if(criteria.empty()||criteria.size()>2000)throw Failure("Acceptance criteria are required");
- if(limitations.size()>2000)throw Failure("Limitations exceed 2000 characters");
- if(state!="DRAFT"&&state!="FROZEN")throw Failure("Protocol state must be DRAFT or FROZEN");
- Db db(app.root/"morfo.sqlite3");Stmt version(db.p,"SELECT COALESCE(MAX(protocol_version),0)+1 FROM evaluation_protocols WHERE owner_user_id=? AND title=?");version.bind(1,user_id);version.bind(2,title);if(sqlite3_step(version.p)!=SQLITE_ROW)throw Failure("Cannot version protocol");const int next=sqlite3_column_int(version.p,0);
- const std::string id=rand_id(),now=utc_offset(0),criteria_json="{\"statement\":"+q(criteria)+"}";Stmt insert(db.p,"INSERT INTO evaluation_protocols(id,owner_user_id,title,hypothesis,task,experimental_unit,split_strategy,acceptance_criteria_json,limitations,state,protocol_version,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)");insert.bind(1,id);insert.bind(2,user_id);insert.bind(3,title);insert.bind(4,hypothesis);insert.bind(5,task);insert.bind(6,unit);insert.bind(7,split);insert.bind(8,criteria_json);insert.bind(9,limitations);insert.bind(10,state);sqlite3_bind_int(insert.p,11,next);insert.bind(12,now);if(sqlite3_step(insert.p)!=SQLITE_DONE)throw Failure(sqlite3_errmsg(db.p));
- return evaluation_protocols_json(app,user_id);
-}
-
-static std::string freeze_evaluation_protocol(const App& app,const std::string& user_id,const std::string& protocol_id){
- Db db(app.root/"morfo.sqlite3");Stmt drafts(db.p,"SELECT COUNT(*) FROM evaluation_datasets d JOIN evaluation_protocols p ON p.id=d.protocol_id WHERE d.protocol_id=? AND p.owner_user_id=? AND d.state='DRAFT'");drafts.bind(1,protocol_id);drafts.bind(2,user_id);if(sqlite3_step(drafts.p)!=SQLITE_ROW)throw Failure("Cannot inspect evaluation datasets");if(sqlite3_column_int(drafts.p,0)>0)throw Failure("Freeze evaluation datasets before freezing protocol");Stmt update(db.p,"UPDATE evaluation_protocols SET state='FROZEN' WHERE id=? AND owner_user_id=? AND state='DRAFT'");update.bind(1,protocol_id);update.bind(2,user_id);if(sqlite3_step(update.p)!=SQLITE_DONE)throw Failure(sqlite3_errmsg(db.p));if(sqlite3_changes(db.p)!=1){Stmt exists(db.p,"SELECT state FROM evaluation_protocols WHERE id=? AND owner_user_id=?");exists.bind(1,protocol_id);exists.bind(2,user_id);if(sqlite3_step(exists.p)!=SQLITE_ROW)throw Failure("Evaluation protocol not found");throw Failure("Protocol is already frozen");}return evaluation_protocols_json(app,user_id);
-}
-
-static std::string freeze_evaluation_dataset(const App& app,const std::string& user_id,const std::string& dataset_id){
- Db db(app.root/"morfo.sqlite3");Stmt inspect(db.p,"SELECT d.state,(SELECT COUNT(*) FROM evaluation_units u WHERE u.dataset_id=d.id),(SELECT COUNT(*) FROM evaluation_units u WHERE u.dataset_id=d.id AND (u.reference_sha256 IS NULL OR u.reference_sha256='')),p.task FROM evaluation_datasets d JOIN evaluation_protocols p ON p.id=d.protocol_id WHERE d.id=? AND p.owner_user_id=?");inspect.bind(1,dataset_id);inspect.bind(2,user_id);if(sqlite3_step(inspect.p)!=SQLITE_ROW)throw Failure("Evaluation dataset not found");if(col(inspect.p,0)!="DRAFT")throw Failure("Dataset is already frozen");if(sqlite3_column_int(inspect.p,1)<1)throw Failure("Empty dataset cannot be frozen");if(col(inspect.p,3)=="SEGMENTATION"&&sqlite3_column_int(inspect.p,2)>0)throw Failure("Every unit requires an independent reference mask before freezing");Stmt update(db.p,"UPDATE evaluation_datasets SET state='FROZEN',frozen_at=? WHERE id=? AND state='DRAFT'");update.bind(1,utc_offset(0));update.bind(2,dataset_id);if(sqlite3_step(update.p)!=SQLITE_DONE||sqlite3_changes(db.p)!=1)throw Failure("Cannot freeze evaluation dataset");return evaluation_datasets_json(app,user_id);
-}
-
-static std::string attach_profile_to_evaluation(const App& app,const std::string& user_id,const std::string& protocol_id,const std::string& body){
- const auto profile_run_id=json_extract_string(body,"profile_run_id"),split=json_extract_string(body,"split"),group_key=json_extract_string(body,"group_key");if(profile_run_id.size()!=24||!std::all_of(profile_run_id.begin(),profile_run_id.end(),[](char c){return(c>='a'&&c<='f')||(c>='0'&&c<='9');}))throw Failure("Invalid profile run identifier");if(split!="DEVELOPMENT"&&split!="TEST")throw Failure("Split must be DEVELOPMENT or TEST");if(group_key.empty()||group_key.size()>160)throw Failure("Experimental group is required");
- Db db(app.root/"morfo.sqlite3");Stmt protocol(db.p,"SELECT title,state FROM evaluation_protocols WHERE id=? AND owner_user_id=?");protocol.bind(1,protocol_id);protocol.bind(2,user_id);if(sqlite3_step(protocol.p)!=SQLITE_ROW)throw Failure("Evaluation protocol not found");if(col(protocol.p,1)!="DRAFT")throw Failure("Frozen protocol cannot receive new units");
- Stmt profile(db.p,R"SQL(SELECT r.image_id,r.original_sha256,r.mask_sha256,r.version,i.filename,i.sample_id FROM morfo_profile_runs r JOIN images i ON i.id=r.image_id WHERE r.id=? AND r.user_id=? AND r.deleted_at IS NULL AND i.user_id=? AND i.deleted_at IS NULL)SQL");profile.bind(1,profile_run_id);profile.bind(2,user_id);profile.bind(3,user_id);if(sqlite3_step(profile.p)!=SQLITE_ROW)throw Failure("Profile run not found");const std::string image_id=col(profile.p,0),input_sha=col(profile.p,1),mask_sha=col(profile.p,2),version=col(profile.p,3),filename=col(profile.p,4),sample=col(profile.p,5);
- sql(db.p,"BEGIN IMMEDIATE");try{std::string dataset_id;Stmt dataset(db.p,"SELECT id FROM evaluation_datasets WHERE protocol_id=? AND state='DRAFT' ORDER BY created_at DESC LIMIT 1");dataset.bind(1,protocol_id);if(sqlite3_step(dataset.p)==SQLITE_ROW)dataset_id=col(dataset.p,0);else{dataset_id=rand_id();const auto now=utc_offset(0);Stmt create(db.p,"INSERT INTO evaluation_datasets(id,protocol_id,name,content_sha256,reference_kind,frozen_at,created_at,state) VALUES(?,?,?,'PENDING','NONE','',?,'DRAFT')");create.bind(1,dataset_id);create.bind(2,protocol_id);create.bind(3,"Conjunto operacional — "+col(protocol.p,0));create.bind(4,now);if(sqlite3_step(create.p)!=SQLITE_DONE)throw Failure(sqlite3_errmsg(db.p));}
-  const std::string unit_id=rand_id(),metadata="{\"filename\":"+q(filename)+",\"sample_id\":"+q(sample)+",\"profile_version\":"+q(version)+",\"mask_sha256\":"+q(mask_sha)+"}";Stmt unit(db.p,"INSERT INTO evaluation_units(id,dataset_id,external_key,split,group_key,input_sha256,metadata_json,image_id,profile_run_id) VALUES(?,?,?,?,?,?,?,?,?)");unit.bind(1,unit_id);unit.bind(2,dataset_id);unit.bind(3,image_id);unit.bind(4,split);unit.bind(5,group_key);unit.bind(6,input_sha);unit.bind(7,metadata);unit.bind(8,image_id);unit.bind(9,profile_run_id);if(sqlite3_step(unit.p)!=SQLITE_DONE)throw Failure(sqlite3_errmsg(db.p));
-  Stmt manifest(db.p,"SELECT input_sha256,split,group_key,profile_run_id FROM evaluation_units WHERE dataset_id=? ORDER BY external_key");manifest.bind(1,dataset_id);std::string material;int count=0;while(sqlite3_step(manifest.p)==SQLITE_ROW){material+=col(manifest.p,0)+"|"+col(manifest.p,1)+"|"+col(manifest.p,2)+"|"+col(manifest.p,3)+"\n";++count;}Stmt update(db.p,"UPDATE evaluation_datasets SET content_sha256=? WHERE id=? AND state='DRAFT'");update.bind(1,hash256_text(material));update.bind(2,dataset_id);if(sqlite3_step(update.p)!=SQLITE_DONE)throw Failure(sqlite3_errmsg(db.p));sql(db.p,"COMMIT");return "{\"data\":{\"dataset_id\":"+q(dataset_id)+",\"unit_id\":"+q(unit_id)+",\"profile_run_id\":"+q(profile_run_id)+",\"split\":"+q(split)+",\"group_key\":"+q(group_key)+",\"unit_count\":"+std::to_string(count)+"}}";}catch(...){sqlite3_exec(db.p,"ROLLBACK",nullptr,nullptr,nullptr);throw;}
 }
 
 static std::string update_analysis_run(const App& app,const std::string& run_id,const std::string& user_id,const std::string& body){
@@ -1561,21 +1464,14 @@ static Response handle(const App& app,const http::request<http::string_body>& re
  }
 
  // Protected routes
- if(p=="/api/v1/images"||p=="/api/v1/root-metrics"||p=="/api/v1/evaluation/overview"||p=="/api/v1/evaluation/protocols"||p=="/api/v1/evaluation/datasets"||p=="/api/v1/parameter-presets"||p=="/api/v1/export/manifest.csv"||p.starts_with("/api/v1/evaluation/protocols/")||p.starts_with("/api/v1/evaluation/datasets/")||p.starts_with("/api/v1/images/")||p.starts_with("/api/v1/refinements/")||p.starts_with("/api/v1/parameter-presets/")||p.starts_with("/api/v1/analysis-regions/")||p.starts_with("/api/v1/analysis-runs/")||p.starts_with("/api/v1/root-metrics/")||p.starts_with("/api/v1/calibrations/")){
+ if(p=="/api/v1/images"||p=="/api/v1/root-metrics"||p=="/api/v1/parameter-presets"||p=="/api/v1/export/manifest.csv"||p.starts_with("/api/v1/images/")||p.starts_with("/api/v1/refinements/")||p.starts_with("/api/v1/parameter-presets/")||p.starts_with("/api/v1/analysis-regions/")||p.starts_with("/api/v1/analysis-runs/")||p.starts_with("/api/v1/root-metrics/")||p.starts_with("/api/v1/calibrations/")){
   auto user=authenticate(app,req);
   if(!user){
    return problem(v,http::status::unauthorized,"Autenticação necessária. Solicite uma chave de acesso para seu e-mail.");
   }
   if(req.method()==http::verb::get&&p=="/api/v1/images")return respond(http::status::ok,v,all_images(app,user->id));
   if(req.method()==http::verb::get&&p=="/api/v1/export/manifest.csv")return respond(http::status::ok,v,manifest(app,user->id),"text/csv; charset=utf-8");
-  if(req.method()==http::verb::get&&p=="/api/v1/root-metrics")return respond(http::status::ok,v,all_morfo_metric_runs_json(app,user->id));
-  if(req.method()==http::verb::get&&p=="/api/v1/evaluation/overview")return respond(http::status::ok,v,evaluation_overview_json(app,user->id));
-  if(req.method()==http::verb::get&&p=="/api/v1/evaluation/datasets")return respond(http::status::ok,v,evaluation_datasets_json(app,user->id));
-  if(p=="/api/v1/evaluation/protocols"){
-   try{if(req.method()==http::verb::get)return respond(http::status::ok,v,evaluation_protocols_json(app,user->id));if(req.method()==http::verb::post){if(req[http::field::content_type].find("application/json")!=0)return problem(v,http::status::unsupported_media_type,"Use application/json");return respond(http::status::created,v,create_evaluation_protocol(app,user->id,req.body()));}}catch(const std::exception& e){return problem(v,http::status::unprocessable_entity,e.what());}
-  }
-  if(p.starts_with("/api/v1/evaluation/protocols/")&&req.method()==http::verb::post){const std::string rem=p.substr(std::string("/api/v1/evaluation/protocols/").size());const auto slash=rem.find('/');const std::string protocol_id=rem.substr(0,slash),action=slash==std::string::npos?"":rem.substr(slash+1);if(!valid_id(protocol_id)||(action!="freeze"&&action!="units"))return problem(v,http::status::bad_request,"Invalid evaluation protocol action");try{if(action=="units"){if(req[http::field::content_type].find("application/json")!=0)return problem(v,http::status::unsupported_media_type,"Use application/json");return respond(http::status::created,v,attach_profile_to_evaluation(app,user->id,protocol_id,req.body()));}return respond(http::status::ok,v,freeze_evaluation_protocol(app,user->id,protocol_id));}catch(const std::exception& e){return problem(v,std::string(e.what())=="Evaluation protocol not found"||std::string(e.what())=="Profile run not found"?http::status::not_found:http::status::unprocessable_entity,e.what());}}
-  if(p.starts_with("/api/v1/evaluation/datasets/")){const std::string rem=p.substr(std::string("/api/v1/evaluation/datasets/").size());std::vector<std::string> parts;std::istringstream stream(rem);std::string part;while(std::getline(stream,part,'/'))parts.push_back(part);if(parts.empty()||!valid_id(parts[0]))return problem(v,http::status::bad_request,"Invalid evaluation dataset action");try{if(parts.size()==2&&parts[1]=="freeze"&&req.method()==http::verb::post)return respond(http::status::ok,v,freeze_evaluation_dataset(app,user->id,parts[0]));if(parts.size()>=3&&parts[1]=="units"&&valid_id(parts[2])){if(parts.size()==3&&req.method()==http::verb::patch){if(req[http::field::content_type].find("application/json")!=0)return problem(v,http::status::unsupported_media_type,"Use application/json");return respond(http::status::ok,v,update_evaluation_unit(app,user->id,parts[0],parts[2],req.body()));}if(parts.size()==3&&req.method()==http::verb::delete_)return respond(http::status::ok,v,delete_evaluation_unit(app,user->id,parts[0],parts[2]));if(parts.size()==4&&parts[3]=="reference"&&req.method()==http::verb::post){if(req[http::field::content_type].find("image/png")!=0)return problem(v,http::status::unsupported_media_type,"Use image/png");const std::string filename=req.find("X-Reference-Filename")==req.end()?"reference.png":std::string(req["X-Reference-Filename"]);return respond(http::status::created,v,add_evaluation_reference(app,user->id,parts[0],parts[2],filename,req.body()));}}return problem(v,http::status::bad_request,"Invalid evaluation dataset action");}catch(const std::exception& e){const std::string message=e.what();return problem(v,message=="Evaluation dataset not found"||message=="Draft evaluation unit not found"?http::status::not_found:http::status::unprocessable_entity,message);}}
+   if(req.method()==http::verb::get&&p=="/api/v1/root-metrics")return respond(http::status::ok,v,all_morfo_metric_runs_json(app,user->id));
   if(p=="/api/v1/parameter-presets"){
    try{if(req.method()==http::verb::get)return respond(http::status::ok,v,parameter_presets(app,user->id));if(req.method()==http::verb::post){if(req[http::field::content_type].find("application/json")!=0)return problem(v,http::status::unsupported_media_type,"Use application/json");return respond(http::status::created,v,save_parameter_preset(app,user->id,req.body()));}}catch(const std::exception& e){return problem(v,http::status::unprocessable_entity,e.what());}
   }

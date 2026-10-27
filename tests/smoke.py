@@ -215,30 +215,9 @@ def main():
             assert status==200 and json.loads(body)['authenticated'] is True
             assert json.loads(body)['user']['email']==email
 
-            # MORFO-AVALIA exposes only persisted evidence; fresh workspaces are honestly empty.
+            # Removed product surface must stay unavailable while legacy data is preserved.
             status,body,_=req(base+'/api/v1/evaluation/overview',headers=auth_headers)
-            assert status==200,(status,body)
-            evaluation=json.loads(body)
-            assert evaluation['schema']=='morfo.evaluation-overview.v1'
-            assert evaluation['data']['counts']=={'protocols':0,'datasets':0,'runs':0,'completed':0}
-            assert evaluation['data']['summaries']==[]
-            protocol = {
-                'title':'Validação EXP-003', 'hypothesis':'EXP-003 supera baseline congelado.',
-                'task':'SEGMENTATION', 'experimental_unit':'planta',
-                'split_strategy':'Agrupada por planta e sessão',
-                'acceptance_criteria':'Dice com IC 95% e análise de perdas',
-                'limitations':'Primeiro domínio: raízes', 'state':'DRAFT'
-            }
-            status,body,_=req(base+'/api/v1/evaluation/protocols','POST',json.dumps(protocol).encode(),{'Content-Type':'application/json',**auth_headers})
-            assert status==201,(status,body)
-            protocols=json.loads(body)['data']
-            assert len(protocols)==1 and protocols[0]['version']==1 and protocols[0]['state']=='DRAFT'
-            assert protocols[0]['acceptance_criteria']['statement']==protocol['acceptance_criteria']
-            protocol_id=protocols[0]['id']
-            status,body,_=req(base+'/api/v1/evaluation/protocols',headers=auth_headers)
-            assert status==200 and len(json.loads(body)['data'])==1
-            status,body,_=req(base+'/api/v1/evaluation/overview',headers=auth_headers)
-            assert json.loads(body)['data']['counts']['protocols']==1
+            assert status==404,(status,body)
 
             # Irregular dimensions cross tile boundaries and exercise EXP-004 edge tiles.
             data=patterned_png()
@@ -483,39 +462,6 @@ def main():
             assert status == 200 and json.loads(data)['classification'] == 'ANOMALY_CANDIDATE'
             status, data, _ = req(profile_url, headers=auth_headers)
             assert status == 200 and profile_id in data.decode(), (status, data)
-            unit_body={'profile_run_id':profile_id,'split':'DEVELOPMENT','group_key':'plant-001'}
-            status, body, _ = req(base+f'/api/v1/evaluation/protocols/{protocol_id}/units','POST',json.dumps(unit_body).encode(),{'Content-Type':'application/json',**auth_headers})
-            linked=json.loads(body)['data']; assert status==201 and linked['profile_run_id']==profile_id and linked['unit_count']==1,(status,body)
-            status,body,_=req(base+'/api/v1/evaluation/datasets',headers=auth_headers)
-            datasets=json.loads(body)['data']; assert status==200 and len(datasets)==1,(status,body)
-            dataset=datasets[0]; dataset_id=dataset['id']
-            assert dataset['state']=='DRAFT' and len(dataset['content_sha256'])==64 and len(dataset['units'])==1,dataset
-            assert dataset['units'][0]['profile_run_id']==profile_id and dataset['units'][0]['group_key']=='plant-001',dataset
-            unit_id=dataset['units'][0]['id']
-            status,body,_=req(base+f'/api/v1/evaluation/datasets/{dataset_id}/units/{unit_id}','PATCH',json.dumps({'split':'TEST','group_key':'plant-002'}).encode(),{'Content-Type':'application/json',**auth_headers})
-            edited=json.loads(body)['data'][0]['units'][0]; assert status==200 and edited['split']=='TEST' and edited['group_key']=='plant-002',(status,body)
-            status,body,_=req(base+f'/api/v1/evaluation/datasets/{dataset_id}/units/{unit_id}','DELETE',b'',auth_headers)
-            assert status==200 and json.loads(body)['data'][0]['units']==[],(status,body)
-            status, body, _ = req(base+f'/api/v1/evaluation/protocols/{protocol_id}/units','POST',json.dumps(unit_body).encode(),{'Content-Type':'application/json',**auth_headers})
-            linked=json.loads(body)['data']; assert status==201 and linked['unit_count']==1,(status,body)
-            status,body,_=req(base+'/api/v1/evaluation/datasets',headers=auth_headers)
-            unit_id=json.loads(body)['data'][0]['units'][0]['id']
-            status,body,_=req(base+f'/api/v1/evaluation/protocols/{protocol_id}/freeze','POST',b'',auth_headers)
-            assert status==422 and b'Freeze evaluation datasets' in body,(status,body)
-            status,body,_=req(base+f'/api/v1/evaluation/datasets/{dataset_id}/freeze','POST',b'',auth_headers)
-            assert status==422 and b'independent reference mask' in body,(status,body)
-            status,body,_=req(base+f'/api/v1/evaluation/datasets/{dataset_id}/units/{unit_id}/reference','POST',candidate,{'Content-Type':'image/png','X-Reference-Filename':'specialist-mask.png',**auth_headers})
-            referenced=json.loads(body)['data'][0]['units'][0]
-            assert status==201 and referenced['reference_filename']=='specialist-mask.png' and len(referenced['reference_sha256'])==64,(status,body)
-            status,body,_=req(base+f'/api/v1/evaluation/datasets/{dataset_id}/freeze','POST',b'',auth_headers)
-            frozen_dataset=json.loads(body)['data'][0]
-            assert status==200 and frozen_dataset['state']=='FROZEN' and frozen_dataset['frozen_at'],(status,body)
-            status,body,_=req(base+f'/api/v1/evaluation/datasets/{dataset_id}/units/{unit_id}','DELETE',b'',auth_headers)
-            assert status==404,(status,body)
-            status,body,_=req(base+f'/api/v1/evaluation/protocols/{protocol_id}/freeze','POST',b'',auth_headers)
-            assert status==200 and json.loads(body)['data'][0]['state']=='FROZEN',(status,body)
-            status,body,_=req(base+f'/api/v1/evaluation/protocols/{protocol_id}/units','POST',json.dumps(unit_body).encode(),{'Content-Type':'application/json',**auth_headers})
-            assert status==422,(status,body)
             status, data, _ = req(base+f'/api/v1/images/{large_id}/profiles/roots-exp003', 'POST', b'', auth_headers)
             assert status == 422 and b'12 MP' in data, (status, data)
 
