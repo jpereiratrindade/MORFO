@@ -871,18 +871,18 @@ function recomputeSegmentation(sensitivity = segSensitivity) {
   overlayCtx.putImageData(overlayData, 0, 0);
 
   const pxPerCm = w / segScaleWidthCm;
-  const rootLengthCm = (totalRootPx / (pxPerCm * 2.5)).toFixed(1);
   const faceAreaCm2 = segScaleWidthCm * (h / pxPerCm);
-  const rootDensityCmCm2 = (rootLengthCm / Math.max(1, faceAreaCm2)).toFixed(2);
+  const maskAreaCm2 = (totalRootPx / (pxPerCm * pxPerCm)).toFixed(2);
+  const maskCoveragePct = ((totalRootPx / Math.max(1, total)) * 100).toFixed(2);
 
   segCanvases = {
     roots: rootsCanvas, matrix: matrixCanvas, binary: binaryCanvas, overlay: overlayCanvas,
-    w, h, totalRootPx, rootLengthCm, rootDensityCmCm2
+    w, h, totalRootPx, faceAreaCm2, maskAreaCm2, maskCoveragePct
   };
   segCurrentRunId = currentAnalysis ? currentAnalysis.id : null;
 
   if ($('scale-density-val')) {
-    $('scale-density-val').textContent = `${rootLengthCm} cm (${rootDensityCmCm2} cm/cm²)`;
+    $('scale-density-val').textContent = `${maskAreaCm2} cm² (${maskCoveragePct}% da imagem)`;
   }
 
   applyActiveLayer();
@@ -1142,7 +1142,7 @@ async function validateFinalAnalysis(){
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
         status: 'COMPLETED',
-        notes: (currentAnalysis.notes ? currentAnalysis.notes + '\n\n' : '') + '✓ Segmentação global homologada e validada pelo pesquisador responsável.'
+        notes: (currentAnalysis.notes ? currentAnalysis.notes + '\n\n' : '') + '✓ Revisão da segmentação concluída pelo operador.'
       })
     });
     currentAnalysis.status = res.data.status;
@@ -1151,7 +1151,7 @@ async function validateFinalAnalysis(){
     const item = analysisRuns.find(r => r.id === currentAnalysis.id);
     if(item) item.status = res.data.status;
     renderAnalysis();
-    toast('Análise homologada e validada cientificamente com sucesso!');
+    toast('Revisão concluída. Estado científico permanece experimental.');
   }catch(err){ toast(err.message); }
 }
 
@@ -1259,7 +1259,7 @@ function renderAnalysis(){
   const selected = selectedRegion && regionById(selectedRegion.id);
 
   const st = currentAnalysis.status || 'REVIEW_REQUIRED';
-  const statusLabel = st === 'COMPLETED' ? '✓ Homologada' : (st === 'ARCHIVED' ? '⊘ Arquivada' : '⚡ Revisão Pendente');
+  const statusLabel = st === 'COMPLETED' ? '✓ Revisão concluída' : (st === 'ARCHIVED' ? '⊘ Arquivada' : '⚡ Revisão Pendente');
   const statusCls = st === 'COMPLETED' ? 'completed' : (st === 'ARCHIVED' ? 'archived' : 'review');
 
   const notesHtml = editingNotes ? `
@@ -1330,8 +1330,9 @@ function renderAnalysis(){
           <div><input type="number" id="scale-cm" min="1" max="500" value="${segScaleWidthCm}" step="0.5"> <small>cm</small></div>
         </div>
         <div class="scale-result">
-          <span>Comprimento e Densidade:</span>
-          <strong id="scale-density-val">${segCanvases?.rootLengthCm ? `${segCanvases.rootLengthCm} cm (${segCanvases.rootDensityCmCm2} cm/cm²)` : 'Calculando…'}</strong>
+          <span>Área e cobertura da máscara:</span>
+          <strong id="scale-density-val">${segCanvases?.maskAreaCm2 ? `${segCanvases.maskAreaCm2} cm² (${segCanvases.maskCoveragePct}% da imagem)` : 'Calculando…'}</strong>
+          <small>Medida geométrica experimental; não representa comprimento radicular.</small>
         </div>
       </div>
 
@@ -1348,13 +1349,13 @@ function renderAnalysis(){
       <div class="validation-section">
         ${st === 'COMPLETED' ? `
           <div class="val-approved-badge">
-            <span>✓ ANÁLISE HOMOLOGADA E VALIDADA</span>
-            <small>Segmentação final aprovada pelo pesquisador responsável</small>
+            <span>✓ REVISÃO CONCLUÍDA PELO OPERADOR</span>
+            <small>Segmentação experimental revisada; sem validação biológica implícita</small>
           </div>
         ` : `
           <div class="val-actions-row">
-            <button type="button" class="btn-validate-final" id="btn-validate-final" title="Aprovar e homologar cientificamente a segmentação global da imagem">
-              ✓ Validar e Homologar Análise Final
+            <button type="button" class="btn-validate-final" id="btn-validate-final" title="Registrar conclusão da revisão operacional da segmentação">
+              ✓ Concluir Revisão da Análise
             </button>
           </div>
         `}

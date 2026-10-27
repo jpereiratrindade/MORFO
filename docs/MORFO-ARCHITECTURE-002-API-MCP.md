@@ -114,6 +114,10 @@ O servidor MCP do MORFO expõe as capacidades investigativas do sistema para age
 - **Streamable HTTP:** Endpoint `/mcp` no servidor C++26, mantendo compatibilidade com clientes MCP modernos (especificação julho de 2026 com conexões sem estado e transporte contínuo).
 - **Transporte stdio:** Binário auxiliar `morfo-mcp-bridge` ou flag `--mcp-stdio` para execução local integrada.
 
+Chamadas `POST` exigem sessão MORFO autenticada. Toda ferramenta que consulta
+dados aplica isolamento pelo `user_id`; identidade ausente é recusada por padrão
+tanto no transporte HTTP quanto no dispatcher.
+
 ### 4.2 Ferramentas MCP (`Tools`)
 
 | Ferramenta | Descrição | Parâmetros Principais | Retorno |

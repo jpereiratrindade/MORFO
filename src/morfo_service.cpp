@@ -171,6 +171,10 @@ std::string McpDispatcher::handle_tools_call(std::string_view id, std::string_vi
     const std::string name = extract_field(params_json, "name");
     const std::string args_json = extract_object(params_json, "arguments");
 
+    if (user_id.empty()) {
+        return make_error_response(id, -32001, "Authentication required");
+    }
+
     std::ostringstream ss;
     ss << "{\"jsonrpc\":\"2.0\",\"id\":" << (id.empty() ? "null" : (id.front() == '"' ? std::string(id) : q(id))) << ",\"result\":{\"content\":[";
 
@@ -181,11 +185,10 @@ std::string McpDispatcher::handle_tools_call(std::string_view id, std::string_vi
         std::ostringstream img_list;
         img_list << "{\"images\":[";
         if (db_) {
-            const char* sql = "SELECT id, filename, sha256, width, height, created_at FROM images WHERE deleted_at IS NULL AND (?='' OR user_id=?) ORDER BY created_at DESC LIMIT 20";
+            const char* sql = "SELECT id, filename, sha256, width, height, created_at FROM images WHERE deleted_at IS NULL AND user_id=? ORDER BY created_at DESC LIMIT 20";
             sqlite3_stmt* stmt = nullptr;
             if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) == SQLITE_OK) {
                 sqlite3_bind_text(stmt, 1, user_id.c_str(), -1, SQLITE_STATIC);
-                sqlite3_bind_text(stmt, 2, user_id.c_str(), -1, SQLITE_STATIC);
                 bool first = true;
                 while (sqlite3_step(stmt) == SQLITE_ROW) {
                     if (!first) img_list << ",";
@@ -213,10 +216,11 @@ std::string McpDispatcher::handle_tools_call(std::string_view id, std::string_vi
         std::ostringstream res;
         res << "{\"analysis_id\":" << q(analysis_id);
         if (db_ && !analysis_id.empty()) {
-            const char* sql = "SELECT image_id, profile, version, candidate_pixels, components, border_abstentions, status FROM morfo_profile_runs WHERE id=? AND deleted_at IS NULL";
+            const char* sql = "SELECT image_id, profile, version, candidate_pixels, components, border_abstentions, status FROM morfo_profile_runs WHERE id=? AND user_id=? AND deleted_at IS NULL";
             sqlite3_stmt* stmt = nullptr;
             if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) == SQLITE_OK) {
                 sqlite3_bind_text(stmt, 1, analysis_id.c_str(), -1, SQLITE_STATIC);
+                sqlite3_bind_text(stmt, 2, user_id.c_str(), -1, SQLITE_STATIC);
                 if (sqlite3_step(stmt) == SQLITE_ROW) {
                     const char* img_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
                     const char* prof = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));

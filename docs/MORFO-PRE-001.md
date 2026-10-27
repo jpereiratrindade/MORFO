@@ -3,6 +3,12 @@
 Status: **executável experimental**  
 Versão: `pre001-0.1.0-experimental`
 
+Os descritores perceptivos usam cor média, luminância, dispersão e bordas. A
+posição da célula permanece na proveniência, mas não participa da distância de
+agrupamento; assim, aparência uniforme não é separada apenas pela localização.
+Quando não há diversidade visual suficiente, o resultado colapsa para um único
+morfotipo em vez de fabricar clusters vazios.
+
 ## Propósito
 
 Receber imagem sem tema ou classes antecipadas e produzir agrupamentos visuais provisórios. Saídas usam identificadores neutros `MORFOTIPO-NNN`; nunca nomes biológicos.

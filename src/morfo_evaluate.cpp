@@ -28,6 +28,8 @@ BinaryMetrics binary(std::span<const std::uint8_t> prediction,std::span<const st
   else ++m.false_negative;
  }
  const double tp=m.true_positive,tn=m.true_negative,fp=m.false_positive,fn=m.false_negative;
+ m.precision_applicable=tp+fp>0;m.recall_applicable=tp+fn>0;
+ m.overlap_applicable=tp+fp+fn>0;
  m.precision=ratio(tp,tp+fp);m.recall=ratio(tp,tp+fn);
  m.f1=ratio(2*tp,2*tp+fp+fn);m.dice=m.f1;m.iou=ratio(tp,tp+fp+fn);
  m.accuracy=ratio(tp+tn,tp+tn+fp+fn);return m;

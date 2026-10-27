@@ -1,4 +1,4 @@
-// MORFO v0.1.0: image-first, local-only acquisition and reproducible previews.
+// MORFO v0.2.0: image-first acquisition, reproducible analysis and scientific evaluation.
 // Copyright (C) 2026 José Pedro Trindade
 //
 // This program is free software: you can redistribute it and/or modify
@@ -1547,12 +1547,12 @@ static Response handle(const App& app,const http::request<http::string_body>& re
 
  if(p=="/mcp"||p=="/api/v1/mcp"){
   auto user=authenticate(app,req);
-  std::string user_id=user?user->id:"";
   if(req.method()==http::verb::post){
+   if(!user)return problem(v,http::status::unauthorized,"Autenticação necessária para acessar o MCP.");
    if(req[http::field::content_type].find("application/json")!=0)return problem(v,http::status::unsupported_media_type,"Use application/json");
    Db db(app.root/"morfo.sqlite3");
    morfo::service::McpDispatcher dispatcher(db.p);
-   return respond(http::status::ok,v,dispatcher.dispatch(req.body(),user_id));
+   return respond(http::status::ok,v,dispatcher.dispatch(req.body(),user->id));
   }
   if(req.method()==http::verb::get){
    return respond(http::status::ok,v,R"({"status":"ok","transport":"Streamable HTTP","protocol":"Model Context Protocol 2026","endpoint":"/mcp"})");

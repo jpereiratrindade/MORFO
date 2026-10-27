@@ -1,6 +1,6 @@
 # MORFO — Percepção e Classificação Temática Adaptativa
 
-**MORFO v0.1.0 · sempre pronto, sempre incompleto.**
+**MORFO v0.2.0 · sempre pronto, sempre incompleto.**
 
 Projeto independente focado em aquisição, processamento de imagens e percepção temática adaptativa (inicializado a partir do código do **RIZOMA** com extensão de perfis temáticos e governança estrita de proveniência).
 

@@ -440,6 +440,8 @@ def main():
             status, mcp_get, _ = req(base+'/mcp')
             assert status == 200 and b'Model Context Protocol 2026' in mcp_get, (status, mcp_get)
             mcp_init = json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}}).encode()
+            status, mcp_denied, _ = req(base+'/mcp', 'POST', mcp_init, {'Content-Type': 'application/json'})
+            assert status == 401 and b'Autentica' in mcp_denied, (status, mcp_denied)
             status, mcp_init_res, _ = req(base+'/mcp', 'POST', mcp_init, {'Content-Type': 'application/json', **auth_headers})
             assert status == 200 and b'morfo-mcp-server' in mcp_init_res, (status, mcp_init_res)
             mcp_tools = json.dumps({'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list'}).encode()

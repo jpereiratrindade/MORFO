@@ -16,6 +16,12 @@ with tempfile.TemporaryDirectory(prefix="morfo-evaluate-") as name:
     except sqlite3.IntegrityError as error:
         assert "cannot cross" in str(error)
     db.execute("INSERT INTO evaluation_units(id,dataset_id,external_key,split,group_key,input_sha256,metadata_json) VALUES('b','d','b','TEST','plant-2','sha-b','{}')")
+    db.execute("INSERT INTO evaluation_datasets(id,protocol_id,name,content_sha256,reference_kind,frozen_at,created_at) VALUES('d2','p','test-2','sha-2','SPECIALIST','t','t')")
+    try:
+        db.execute("INSERT INTO evaluation_units(id,dataset_id,external_key,split,group_key,input_sha256,metadata_json) VALUES('c','d2','c','TEST','plant-1','sha-c','{}')")
+        raise AssertionError("group leakage across datasets accepted")
+    except sqlite3.IntegrityError as error:
+        assert "cannot cross" in str(error)
     db.execute("INSERT INTO evaluation_runs VALUES('r','p','d','u','EXP-003','003','rev','{}','{}',42,'RUNNING','t',NULL,NULL)")
     try:
         db.execute("INSERT INTO evaluation_observations VALUES('o','r','b','dice',0.9,NULL,'{}','t')")
@@ -36,6 +42,17 @@ with tempfile.TemporaryDirectory(prefix="morfo-evaluate-") as name:
     db.execute("INSERT INTO evaluation_protocols VALUES('pd','u','draft','h','SEGMENTATION','plant','grouped','{}','none','DRAFT',1,'t')")
     db.execute("INSERT INTO evaluation_datasets(id,protocol_id,name,content_sha256,reference_kind,frozen_at,created_at,state) VALUES('dd','pd','draft','sha','NONE','','t','DRAFT')")
     db.execute("INSERT INTO evaluation_units(id,dataset_id,external_key,split,group_key,input_sha256,metadata_json) VALUES('ud','dd','ud','DEVELOPMENT','plant-d','sha-d','{}')")
+    db.execute("INSERT INTO evaluation_units(id,dataset_id,external_key,split,group_key,input_sha256,metadata_json) VALUES('ut','dd','ut','TEST','plant-t','sha-t','{}')")
+    try:
+        db.execute("UPDATE evaluation_units SET group_key='plant-t' WHERE id='ud'")
+        raise AssertionError("group leakage by update accepted")
+    except sqlite3.IntegrityError as error:
+        assert "cannot cross" in str(error)
+    try:
+        db.execute("UPDATE evaluation_units SET group_key='plant-d' WHERE id='ut'")
+        raise AssertionError("group leakage by split update accepted")
+    except sqlite3.IntegrityError as error:
+        assert "cannot cross" in str(error)
     db.execute("UPDATE evaluation_units SET group_key='plant-edited',reference_sha256='ref' WHERE id='ud'")
     assert db.execute("SELECT group_key,reference_sha256 FROM evaluation_units WHERE id='ud'").fetchone()==('plant-edited','ref')
     db.execute("DELETE FROM evaluation_units WHERE id='ud'")
@@ -43,5 +60,6 @@ with tempfile.TemporaryDirectory(prefix="morfo-evaluate-") as name:
     assert db.execute("SELECT name FROM schema_migrations WHERE version=8").fetchone()[0].startswith("manage-draft")
     assert db.execute("SELECT name FROM schema_migrations WHERE version=9").fetchone()[0].startswith("persist-pre001")
     assert db.execute("SELECT name FROM schema_migrations WHERE version=10").fetchone()[0].startswith("version-pre001")
+    assert db.execute("SELECT name FROM schema_migrations WHERE version=11").fetchone()[0].startswith("prevent-evaluation")
     assert db.execute("SELECT version,name FROM schema_migrations WHERE version=6").fetchone()[1].startswith("morfo-dev-002")
     print("MORFO-AVALIA migration PASS: immutable evidence, independent reference, no split leakage")

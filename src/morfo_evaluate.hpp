@@ -11,6 +11,7 @@ namespace morfo::evaluate {
 struct BinaryMetrics {
  std::uint64_t true_positive{},true_negative{},false_positive{},false_negative{};
  double precision{},recall{},f1{},accuracy{},dice{},iou{};
+ bool precision_applicable{},recall_applicable{},overlap_applicable{};
 };
 
 struct MeasurementMetrics {double mae{},rmse{},bias{};std::size_t count{};};

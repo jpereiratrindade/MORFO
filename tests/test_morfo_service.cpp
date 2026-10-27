@@ -41,7 +41,9 @@ int main() {
         assert(list_res.find("morfo_get_analysis") != std::string::npos);
 
         std::string call_req = R"({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"morfo_list_profiles","arguments":{}}})";
-        std::string call_res = dispatcher.dispatch(call_req);
+        std::string denied_res = dispatcher.dispatch(call_req);
+        assert(denied_res.find("Authentication required") != std::string::npos);
+        std::string call_res = dispatcher.dispatch(call_req, "user-1");
         assert(call_res.find("roots-exp003") != std::string::npos);
         assert(call_res.find("discovery") != std::string::npos);
     }
@@ -88,7 +90,9 @@ int main() {
                 status TEXT NOT NULL, deleted_at TEXT, created_at TEXT NOT NULL
             );
             INSERT INTO images VALUES('img-1','test.tif','sha_abc',800,600,'user-1',NULL,'2026-10-22T10:00:00Z');
+            INSERT INTO images VALUES('img-2','private.tif','sha_private',640,480,'user-2',NULL,'2026-10-22T10:01:00Z');
             INSERT INTO morfo_profile_runs VALUES('run-1','img-1','user-1','roots-exp003','exp003-0.1.0',3339,30,2,'NOT_VALIDATED',NULL,'2026-10-22T10:05:00Z');
+            INSERT INTO morfo_profile_runs VALUES('run-2','img-2','user-2','roots-exp003','exp003-0.1.0',9999,99,9,'NOT_VALIDATED',NULL,'2026-10-22T10:06:00Z');
         )SQL";
         char* err = nullptr;
         assert(sqlite3_exec(db, schema, nullptr, nullptr, &err) == SQLITE_OK);
@@ -100,6 +104,8 @@ int main() {
         std::string img_res = dispatcher.dispatch(img_req, "user-1");
         assert(img_res.find("img-1") != std::string::npos);
         assert(img_res.find("test.tif") != std::string::npos);
+        assert(img_res.find("img-2") == std::string::npos);
+        assert(img_res.find("private.tif") == std::string::npos);
 
         // Test querying analysis result via MCP tool
         std::string ana_req = R"({"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"morfo_get_analysis","arguments":{"analysis_id":"run-1"}}})";
@@ -108,6 +114,14 @@ int main() {
         assert(ana_res.find("3339") != std::string::npos);
         assert(ana_res.find("ANOMALY_CANDIDATE") != std::string::npos);
         assert(ana_res.find("UNKNOWN") != std::string::npos);
+
+        std::string foreign_req = R"({"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"morfo_get_analysis","arguments":{"analysis_id":"run-2"}}})";
+        std::string foreign_res = dispatcher.dispatch(foreign_req, "user-1");
+        assert(foreign_res.find("\\\"found\\\":false") != std::string::npos);
+        assert(foreign_res.find("9999") == std::string::npos);
+
+        std::string empty_identity_res = dispatcher.dispatch(img_req);
+        assert(empty_identity_res.find("Authentication required") != std::string::npos);
 
         sqlite3_close(db);
     }
