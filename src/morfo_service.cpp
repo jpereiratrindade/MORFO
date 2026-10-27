@@ -157,11 +157,6 @@ std::string McpDispatcher::handle_tools_list(std::string_view id) {
        << "\"name\":\"morfo_get_analysis\","
        << "\"description\":\"Recupera os resultados quantitativos, evidências e estado ontológico de uma análise executada.\","
        << "\"inputSchema\":{\"type\":\"object\",\"required\":[\"analysis_id\"],\"properties\":{\"analysis_id\":{\"type\":\"string\"}}}"
-       << "},"
-       << "{"
-       << "\"name\":\"morfo_compare_methods\","
-       << "\"description\":\"Compara os resultados e métricas de divergência entre duas análises da mesma imagem.\","
-       << "\"inputSchema\":{\"type\":\"object\",\"required\":[\"image_id\",\"analysis_a\",\"analysis_b\"],\"properties\":{\"image_id\":{\"type\":\"string\"},\"analysis_a\":{\"type\":\"string\"},\"analysis_b\":{\"type\":\"string\"}}}"
        << "}"
        << "]}}";
     return ss.str();
@@ -251,18 +246,6 @@ std::string McpDispatcher::handle_tools_call(std::string_view id, std::string_vi
             res << ",\"found\":false,\"error\":\"Database unavailable or analysis_id empty\"";
         }
         res << "}";
-        ss << "{\"type\":\"text\",\"text\":" << q(res.str()) << "}";
-    } else if (name == "morfo_compare_methods") {
-        const std::string img_id = extract_field(args_json, "image_id");
-        const std::string ana_a = extract_field(args_json, "analysis_a");
-        const std::string ana_b = extract_field(args_json, "analysis_b");
-        std::ostringstream res;
-        res << "{\"comparison\":{"
-            << "\"image_id\":" << q(img_id)
-            << ",\"analysis_a\":" << q(ana_a)
-            << ",\"analysis_b\":" << q(ana_b)
-            << ",\"epistemic_note\":\"Divergências espaciais indicam hipóteses morfológicas distintas e não constituem erro sem ground truth validado.\""
-            << "}}";
         ss << "{\"type\":\"text\",\"text\":" << q(res.str()) << "}";
     } else {
         return make_error_response(id, -32601, "Tool not found: " + name);

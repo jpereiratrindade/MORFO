@@ -313,9 +313,12 @@ paths:
       description: >
         Endpoint para transporte Streamable HTTP do MCP 2026. Permite que assistentes de inteligência
         artificial descubram ferramentas (tools), leiam recursos (resources) e executem prompts de investigação.
+        Requer sessão MORFO autenticada; ferramentas de dados são isoladas pelo proprietário.
       operationId: handleMcpMessage
       tags:
         - MCP
+      security:
+        - cookieAuth: []
       requestBody:
         required: true
         content:
@@ -330,8 +333,15 @@ paths:
             application/json:
               schema:
                 type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
 components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: morfo_session
   responses:
     BadRequest:
       description: Requisição inválida ou parâmetros ausentes
@@ -341,6 +351,12 @@ components:
             $ref: '#/components/schemas/ProblemDetails'
     NotFound:
       description: Recurso solicitado não foi encontrado
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    Unauthorized:
+      description: Sessão ausente, inválida ou expirada
       content:
         application/problem+json:
           schema:

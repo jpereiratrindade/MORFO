@@ -39,6 +39,7 @@ int main() {
         assert(list_res.find("morfo_list_profiles") != std::string::npos);
         assert(list_res.find("morfo_list_images") != std::string::npos);
         assert(list_res.find("morfo_get_analysis") != std::string::npos);
+        assert(list_res.find("morfo_compare_methods") == std::string::npos);
 
         std::string call_req = R"({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"morfo_list_profiles","arguments":{}}})";
         std::string denied_res = dispatcher.dispatch(call_req);
@@ -122,6 +123,10 @@ int main() {
 
         std::string empty_identity_res = dispatcher.dispatch(img_req);
         assert(empty_identity_res.find("Authentication required") != std::string::npos);
+
+        std::string unavailable_req = R"({"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"morfo_compare_methods","arguments":{"image_id":"img-1","analysis_a":"run-1","analysis_b":"run-2"}}})";
+        std::string unavailable_res = dispatcher.dispatch(unavailable_req, "user-1");
+        assert(unavailable_res.find("Tool not found") != std::string::npos);
 
         sqlite3_close(db);
     }

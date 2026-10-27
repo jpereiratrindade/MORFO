@@ -118,32 +118,32 @@ Chamadas `POST` exigem sessão MORFO autenticada. Toda ferramenta que consulta
 dados aplica isolamento pelo `user_id`; identidade ausente é recusada por padrão
 tanto no transporte HTTP quanto no dispatcher.
 
-### 4.2 Ferramentas MCP (`Tools`)
+### 4.2 Ferramentas MCP implementadas (`Tools`)
 
 | Ferramenta | Descrição | Parâmetros Principais | Retorno |
 | :--- | :--- | :--- | :--- |
-| `morfo_list_images` | Consulta imagens do acervo com filtros de data e metadados | `limit`, `offset`, `search` | Lista estruturada de imagens e hashes |
-| `morfo_run_analysis` | Dispara execução de perfil perceptivo em uma imagem | `image_id`, `profile_id`, `parameters` | `job_id` e status inicial |
-| `morfo_get_results` | Recupera relatório científico, métricas e estado ontológico | `analysis_id` ou `job_id` | JSON com estatísticas, métricas e identificadores de artefatos |
-| `morfo_compare_methods` | Cruza resultados de dois perfis/métodos na mesma imagem | `image_id`, `analysis_id_a`, `analysis_id_b` | Concordância espacial (IoU/Dice), divergências e desvios |
-| `morfo_inspect_regions` | Examina regiões de interesse e coordenadas de anomalias | `analysis_id`, `bbox`, `class_filter` | Regiões detectadas, áreas, descritores de textura e orientação |
-| `morfo_list_patterns` | Recupera agrupamentos emergentes de morfotipos descobertos (PRE-001) | `analysis_id`, `min_confidence` | Morfotipos descobertos, centróides e novidades |
+| `morfo_list_profiles` | Consulta catálogo e semântica dos perfis | — | Perfis, versões e estado epistêmico |
+| `morfo_list_images` | Consulta imagens pertencentes ao usuário autenticado | — | Até 20 imagens e hashes |
+| `morfo_get_analysis` | Recupera execução EXP-003 pertencente ao usuário | `analysis_id` | Contagens e estado ontológico |
+
+Comparação de métodos, execução remota, inspeção regional e PRE-001 via MCP
+permanecem planejados. Não são anunciados por `tools/list` enquanto não houver
+implementação, autorização por proprietário e testes end-to-end.
 
 ### 4.3 Recursos MCP (`Resources`)
 
-O MORFO disponibiliza recursos via esquema de URI próprio `morfo://`:
+Recursos atualmente disponibilizados pelo esquema `morfo://`:
 
-- `morfo://images/{id}/metadata`: Metadados EXIF, resolução, formato e procedência da imagem.
-- `morfo://analyses/{id}/report`: Relatório descritivo com contagens, áreas e distribuição textural.
-- `morfo://analyses/{id}/regions`: Lista detalhada de geometrias e bounding boxes das detecções.
 - `morfo://profiles/catalog`: Catálogo completo de perfis perceptivos instalados e seus limites operacionais.
+- `morfo://system/status`: Versão e regra operacional do serviço.
 
 ### 4.4 Prompts MCP (`Prompts`)
 
 O MORFO fornece modelos guiados de investigação epistêmica:
 
 - `morfo_audit_divergence`: Conduz a análise comparativa entre `roots-exp003` e o método genérico `discovery`, solicitando ao assistente que destaque os pixels divergentes e avalie se correspondem a artefatos de iluminação ou matéria orgânica.
-- `morfo_explore_morphotypes`: Orienta a investigação sobre morfotipos candidatos gerados pelo PRE-001 para apoiar o pesquisador na decisão de cisão ou fusão de classes.
+
+`morfo_explore_morphotypes` permanece planejado e não é anunciado pelo servidor.
 
 ---
 
