@@ -1,0 +1,24 @@
+[Unit]
+Description=MORFO Perception and Scientific Analysis Platform
+Documentation=file://@MORFO_ROOT@/README.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@MORFO_ROOT@
+EnvironmentFile=-@MORFO_ROOT@/.env
+ExecStart=@MORFO_ROOT@/build/morfo-server
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=15s
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=@MORFO_ROOT@/var
+UMask=0077
+
+[Install]
+WantedBy=default.target

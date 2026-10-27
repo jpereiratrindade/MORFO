@@ -78,6 +78,21 @@ MORFO_DEV_AUTH=0
 
 O launcher [`run.sh`](run.sh) compila automaticamente qualquer alteração pendente e carrega as variáveis do arquivo `.env` (se presente).
 
+### Serviço persistente do usuário
+
+Após compilar, instale uma unidade `systemd --user` com caminho resolvido para o
+clone atual:
+
+```bash
+make install-user-service
+systemctl --user status morfo.service
+journalctl --user -u morfo.service -f
+```
+
+A unidade reinicia o servidor após falhas. Com *linger* habilitado para o usuário,
+ela também inicia sem sessão gráfica. O instalador não exige `sudo` e preserva o
+arquivo `.env` fora do controle de versão.
+
 ### Método A: Execução Padrão (utilizando `.env`)
 ```bash
 ./run.sh

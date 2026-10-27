@@ -1,4 +1,4 @@
-.PHONY: all build start stop restart status run logs test clean
+.PHONY: all build start stop restart status run logs test install-user-service clean
 
 all: build
 
@@ -27,6 +27,9 @@ logs:
 
 test:
 	ctest --test-dir build --output-on-failure
+
+install-user-service:
+	./tools/install-user-service.sh
 
 clean:
 	rm -rf build
