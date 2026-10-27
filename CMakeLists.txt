@@ -98,6 +98,11 @@ endif()
 
 find_package(Python3 COMPONENTS Interpreter)
 if(BUILD_TESTING AND Python3_Interpreter_FOUND)
+  find_program(MORFO_NODE_EXECUTABLE node)
+  if(MORFO_NODE_EXECUTABLE)
+    add_test(NAME morfo.web-static COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_SOURCE_DIR}/tests/web_static.py ${CMAKE_SOURCE_DIR}/web/app.js ${MORFO_NODE_EXECUTABLE})
+  endif()
   add_test(NAME rizoma.http-smoke COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/smoke.py $<TARGET_FILE:morfo-server> ${CMAKE_SOURCE_DIR}/web)
   set_tests_properties(rizoma.http-smoke PROPERTIES TIMEOUT 90)
   add_test(NAME rizoma.sqlite-migrations COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/migrations.py $<TARGET_FILE:morfo-server>)
