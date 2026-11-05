@@ -8,16 +8,13 @@ After=network-online.target
 Type=simple
 WorkingDirectory=@MORFO_ROOT@
 EnvironmentFile=-@MORFO_ROOT@/.env
-ExecStart=@MORFO_ROOT@/build/morfo-server
+ExecStart=@MORFO_EXEC_START@
 Restart=on-failure
 RestartSec=5s
 TimeoutStopSec=15s
 
 NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=read-only
-ReadWritePaths=@MORFO_ROOT@/var
+@MORFO_SANDBOX@
 UMask=0077
 
 [Install]

@@ -88,6 +88,13 @@ systemctl --user status morfo.service
 journalctl --user -u morfo.service -f
 ```
 
+No Fedora Silverblue, defina no `.env` o Toolbox que contém as dependências. O
+serviço e o envio SMTP serão executados dentro dele, sem alterar a imagem do host:
+
+```ini
+MORFO_TOOLBOX_CONTAINER=fedora-44-sister
+```
+
 A unidade reinicia o servidor após falhas. Com *linger* habilitado para o usuário,
 ela também inicia sem sessão gráfica. O instalador não exige `sudo` e preserva o
 arquivo `.env` fora do controle de versão.
